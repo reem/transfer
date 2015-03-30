@@ -8,6 +8,7 @@ extern crate mio;
 extern crate hyper;
 extern crate httparse;
 extern crate iobuf;
+extern crate syncbox;
 
 /// Falcon's Error type and associated impls.
 pub mod error;

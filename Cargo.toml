@@ -15,6 +15,9 @@ hyper = "*"
 httparse = "*"
 iobuf = "*"
 
+[dependencies.syncbox]
+git = "https://github.com/carllerche/syncbox"
+
 [dev-dependencies]
 stainless = "*"
 
