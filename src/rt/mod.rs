@@ -9,16 +9,14 @@ use std::time::duration::Duration;
 use std::os::unix::io::AsRawFd;
 use std::fmt;
 
-use rt::handler::Handler as RtHandler;
 use rt::loophandler::LoopHandler;
-use rt::util::RawFd;
 
 use {Result, Error};
 use Handler as HttpHandler;
 
 mod loophandler;
-mod util;
-mod handler;
+mod acceptor;
+mod connection;
 
 pub struct Handle {
     channel: mio::Sender<Message>,
@@ -28,7 +26,7 @@ pub struct Handle {
 pub enum Message {
     NextTick(Thunk<'static>),
     Listener(NonBlock<TcpListener>, Box<HttpHandler>),
-    Io(RawFd, Box<RtHandler>, PollOpt, Interest),
+    Timeout(Thunk<'static>, u64),
     Shutdown
 }
 
@@ -46,10 +44,9 @@ impl Handle {
         self.send(Message::Listener(listener, handler))
     }
 
-    pub fn register_io<E, R>(&self, io: &E, handler: R, pollopt: PollOpt,
-                             interest: Interest) -> Result<()>
-    where E: Evented, R: RtHandler {
-        self.send(Message::Io(RawFd(io.as_raw_fd()), box handler, pollopt, interest))
+    pub fn timeout_ms<F>(&self, cb: F, ms: u64) -> Result<()>
+    where F: FnOnce() + Send + 'static {
+        self.send(Message::Timeout(Thunk::new(cb), ms))
     }
 
     pub fn shutdown(self) -> Result<Future<(), Error>> {
@@ -91,25 +88,10 @@ impl fmt::Debug for Message {
         match *self {
             Message::NextTick(_) => fmt.write_str("Message::NextTick(..)"),
             Message::Listener(_, _) => fmt.write_str("Message::Listener(..)"),
-            Message::Io(raw, _, poll, interest) =>
-                write!(fmt, "Message::RawFd({:?}, {:?}, {:?}, ..)", raw, poll, interest),
+            Message::Timeout(_, delay) =>
+                write!(fmt, "Message::Timeout(.., {:?})", delay),
             Message::Shutdown => fmt.write_str("Message::Shutdown")
         }
-    }
-}
-
-impl fmt::Debug for TimeoutMessage {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            TimeoutMessage::Later(_, time) =>
-                write!(fmt, "TimeoutMessage::Later(.., {:?})", time)
-        }
-    }
-}
-
-impl fmt::Display for TimeoutMessage {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Debug::fmt(self, fmt)
     }
 }
 
