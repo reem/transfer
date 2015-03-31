@@ -1,4 +1,4 @@
-#![feature(std_misc, io_ext)]
+#![feature(std_misc, io_ext, box_syntax)]
 #![cfg_attr(test, deny(warnings))]
 #![cfg_attr(test, feature(test))]
 // #![deny(missing_docs)]

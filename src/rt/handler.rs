@@ -1,4 +1,4 @@
-pub trait Handler: Send {
+pub trait Handler: Send + Sync + 'static {
 
 }
 

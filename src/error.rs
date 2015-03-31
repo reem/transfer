@@ -11,7 +11,8 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 pub enum Error {
     Io(io::Error),
     NotifyQueueFull(::rt::Message),
-    Async(AsyncError<()>)
+    Async(AsyncError<()>),
+    Executor
 }
 
 impl fmt::Display for Error {
@@ -27,7 +28,9 @@ impl fmt::Display for Error {
                         fmt.write_str("Falcon Error: Asynchronous Action Aborted"),
                     AsyncError::Failed(()) =>
                         fmt.write_str("Falcon Error: Asynchronous Action Failed")
-                }
+                },
+            Error::Executor =>
+                fmt.write_str("Falcon Error: Executor Error.")
         }
     }
 }
@@ -41,7 +44,8 @@ impl StdError for Error {
         match *self {
             Error::Io(ref io) => Some(io),
             Error::NotifyQueueFull(_) => None,
-            Error::Async(_) => None // TODO: File in syncbox to implement Error
+            Error::Async(_) => None, // TODO: File in syncbox to implement Error
+            Error::Executor => None
         }
     }
 }
