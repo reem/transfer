@@ -1,4 +1,4 @@
-use mio::{self, EventLoop, EventLoopConfig, NonBlock, Evented, PollOpt, Interest};
+use mio::{self, EventLoop, EventLoopConfig, NonBlock};
 use mio::tcp::TcpListener;
 use iobuf::Allocator;
 use syncbox::util::Run;
@@ -6,7 +6,6 @@ use syncbox::util::async::{Async, Future};
 
 use std::thunk::Thunk;
 use std::time::duration::Duration;
-use std::os::unix::io::AsRawFd;
 use std::fmt;
 
 use rt::loophandler::LoopHandler;

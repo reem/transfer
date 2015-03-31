@@ -1,6 +1,7 @@
-#![feature(std_misc, io_ext, box_syntax)]
+#![feature(std_misc, box_syntax)]
 #![cfg_attr(test, deny(warnings))]
 #![cfg_attr(test, feature(test))]
+#![allow(unused_variables)]
 // #![deny(missing_docs)]
 
 //! # Falcon
