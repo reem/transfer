@@ -3,20 +3,31 @@ use std::error::FromError;
 use std::error::Error as StdError;
 
 use mio::NotifyError;
+use syncbox::util::async::AsyncError;
 
 pub type Result<T> = ::std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
     Io(io::Error),
-    NotifyQueueFull(::rt::Message)
+    NotifyQueueFull(::rt::Message),
+    Async(AsyncError<()>)
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Error::Io(ref io) => write!(fmt, "Falcon Error: {}", io),
-            Error::NotifyQueueFull(_) => fmt.write_str("Falcon Error: Notify Queue Full.")
+            Error::Io(ref io) =>
+                write!(fmt, "Falcon Error: {}", io),
+            Error::NotifyQueueFull(_) =>
+                fmt.write_str("Falcon Error: Notify Queue Full"),
+            Error::Async(ref async) =>
+                match *async {
+                    AsyncError::Aborted =>
+                        fmt.write_str("Falcon Error: Asynchronous Action Aborted"),
+                    AsyncError::Failed(()) =>
+                        fmt.write_str("Falcon Error: Asynchronous Action Failed")
+                }
         }
     }
 }
@@ -29,7 +40,8 @@ impl StdError for Error {
     fn cause(&self) -> Option<&StdError> {
         match *self {
             Error::Io(ref io) => Some(io),
-            Error::NotifyQueueFull(_) => None
+            Error::NotifyQueueFull(_) => None,
+            Error::Async(_) => None // TODO: File in syncbox to implement Error
         }
     }
 }
@@ -46,6 +58,12 @@ impl FromError<NotifyError<::rt::Message>> for Error {
             NotifyError::Io(io) => Error::Io(io),
             NotifyError::Full(m) => Error::NotifyQueueFull(m)
         }
+    }
+}
+
+impl FromError<AsyncError<()>> for Error {
+    fn from_error(err: AsyncError<()>) -> Error {
+        Error::Async(err)
     }
 }
 
