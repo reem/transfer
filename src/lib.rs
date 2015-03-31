@@ -1,6 +1,6 @@
 #![cfg_attr(test, deny(warnings))]
 #![cfg_attr(test, feature(test))]
-#![deny(missing_docs)]
+// #![deny(missing_docs)]
 
 //! # Falcon
 
@@ -14,4 +14,7 @@ pub use error::{Result, Error};
 
 /// Falcon's Error type and associated impls.
 pub mod error;
+
+/// Falcon's runtime, including the event loop.
+pub mod rt;
 
