@@ -10,6 +10,8 @@ extern crate httparse;
 extern crate iobuf;
 extern crate syncbox;
 
+pub use error::{Result, Error};
+
 /// Falcon's Error type and associated impls.
 pub mod error;
 
