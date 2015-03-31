@@ -1,12 +1,22 @@
-use mio::{self, EventLoop, EventLoopConfig};
+use mio::{self, EventLoop, EventLoopConfig, NonBlock};
+use mio::tcp::TcpListener;
 use iobuf::Allocator;
 use syncbox::util::Run;
 use syncbox::util::async::Future;
 
-use self::loophandler::LoopHandler;
+use std::thunk::Thunk;
+use std::time::duration::Duration;
+
+use rt::handler::Handler as RtHandler;
+use rt::loophandler::LoopHandler;
+use rt::util::RawFd;
+
 use {Result, Error};
+use Handler as HttpHandler;
 
 mod loophandler;
+mod util;
+mod handler;
 
 pub struct Handle {
     channel: mio::Sender<Message>,
@@ -14,10 +24,17 @@ pub struct Handle {
 }
 
 pub enum Message {
-
+    NextTick(Thunk<'static>),
+    Acceptor(NonBlock<TcpListener>, Box<HttpHandler>),
+    Io(RawFd, Box<RtHandler>),
+    Shutdown
 }
 
 pub enum TimeoutMessage {
+    Later(Thunk<'static>, Duration)
+}
+
+impl Handle {
 
 }
 

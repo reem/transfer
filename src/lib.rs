@@ -1,3 +1,4 @@
+#![feature(std_misc, io_ext)]
 #![cfg_attr(test, deny(warnings))]
 #![cfg_attr(test, feature(test))]
 // #![deny(missing_docs)]
@@ -11,6 +12,8 @@ extern crate iobuf;
 extern crate syncbox;
 
 pub use error::{Result, Error};
+
+pub trait Handler: Send + Sync + 'static {}
 
 /// Falcon's Error type and associated impls.
 pub mod error;
