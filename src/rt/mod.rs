@@ -1,16 +1,16 @@
 use mio::{self, EventLoop, EventLoopConfig, NonBlock};
 use mio::tcp::TcpListener;
 use iobuf::Allocator;
-use syncbox::util::Run;
-use syncbox::util::async::{Async, Future};
 
 use std::thunk::Thunk;
+use std::sync::Arc;
+use std::error::FromError;
 use std::time::duration::Duration;
 use std::fmt;
 
 use rt::loophandler::LoopHandler;
 
-use {Result, Error};
+use prelude::*;
 use Handler as HttpHandler;
 
 mod loophandler;
@@ -62,19 +62,24 @@ pub fn create<R>(config: EventLoopConfig, allocator: Box<Allocator>,
                  executor: R) -> Result<Handle>
 where R: Run + Send + Sync {
     let mut eloop: EventLoop<LoopHandler<R>> = try!(EventLoop::configured(config));
-    let mut handler = LoopHandler::new(allocator, executor);
+    let mut handler = LoopHandler::new(Arc::new(allocator), Arc::new(executor));
     let channel = eloop.channel();
 
     // Run the event loop on the executor
     let local_executor = handler.executor.clone();
 
-    let on_shutdown = local_executor.invoke(move || {
-        eloop.run(&mut handler).map_err(Error::Io)
-    }).map_err(|_| Error::Executor)
-      .and_then(|x| match x {
-        Ok(()) => Future::of(()),
-        Err(e) => Future::error(e),
-    });
+    let on_shutdown = {
+        let (tx, rx) = Future::pair();
+
+        local_executor.run(move || {
+            match eloop.run(&mut handler).map_err(FromError::from_error) {
+                Ok(()) => tx.complete(()),
+                Err(e) => tx.fail(e)
+            }
+        });
+
+        rx
+    };
 
     Ok(Handle {
         channel: channel,

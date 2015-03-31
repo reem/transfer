@@ -1,4 +1,4 @@
-#![feature(std_misc, box_syntax)]
+#![feature(core, std_misc, box_syntax)]
 #![cfg_attr(test, deny(warnings))]
 #![cfg_attr(test, feature(test))]
 #![allow(unused_variables)]
@@ -11,6 +11,18 @@ extern crate hyper;
 extern crate httparse;
 extern crate iobuf;
 extern crate syncbox;
+extern crate eventual;
+
+pub use eventual::{Future, Complete, Stream, Sender};
+
+pub mod prelude {
+    pub use eventual::{Future, Stream, Join, Async, Select};
+    pub use syncbox::Run;
+    pub use {Result, Error, Handler};
+}
+
+#[macro_use]
+extern crate debug_unreachable;
 
 pub use error::{Result, Error};
 

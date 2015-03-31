@@ -4,28 +4,30 @@ use std::thunk::Thunk;
 use iobuf::Allocator;
 use mio::util::Slab;
 use mio::{self, EventLoop, Token, ReadHint};
-use syncbox::util::Run;
 
 use rt::connection::Connection;
 use rt::acceptor::Acceptor;
 use rt::Message;
 
+use syncbox::Run;
+
 pub struct LoopHandler<R: Run> {
-    pub allocator: Box<Allocator>,
+    pub allocator: Arc<Box<Allocator>>,
     pub executor: Arc<R>,
     pub slab: Slab<Registration>
 }
 
 impl<R> LoopHandler<R> where R: Run {
-    pub fn new(allocator: Box<Allocator>, executor: R) -> LoopHandler<R> {
+    pub fn new(allocator: Arc<Box<Allocator>>, executor: Arc<R>) -> LoopHandler<R> {
         LoopHandler {
             allocator: allocator,
-            executor: Arc::new(executor),
+            executor: executor,
             slab: Slab::new(32 * 1024)
         }
     }
 
-    fn register(&mut self, registration: Registration) {
+    pub fn register(&mut self, registration: Registration) {
+        // TODO: Fill in registration.
         match registration {
             Registration::Connection(conn) => { },
             Registration::Acceptor(acceptor) => { }
@@ -77,7 +79,9 @@ impl<R> mio::Handler for LoopHandler<R> where R: Run {
         match message {
             Message::NextTick(thunk) => thunk.invoke(()),
             Message::Listener(listener, handler) => {
-                self.register(Registration::Acceptor(Acceptor::new(listener, handler)))
+                let allocator = self.allocator.clone();
+                self.register(
+                    Registration::Acceptor(Acceptor::new(listener, handler, allocator)))
             },
             Message::Shutdown => event_loop.shutdown(),
             Message::Timeout(thunk, ms) => { let _ = event_loop.timeout_ms(thunk, ms); }

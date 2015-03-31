@@ -3,7 +3,7 @@ use std::error::FromError;
 use std::error::Error as StdError;
 
 use mio::NotifyError;
-use syncbox::util::async::AsyncError;
+use eventual::AsyncError;
 
 pub type Result<T> = ::std::result::Result<T, Error>;
 
