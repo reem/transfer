@@ -6,6 +6,7 @@ use syncbox::util::async::Future;
 
 use std::thunk::Thunk;
 use std::time::duration::Duration;
+use std::fmt;
 
 use rt::handler::Handler as RtHandler;
 use rt::loophandler::LoopHandler;
@@ -25,7 +26,7 @@ pub struct Handle {
 
 pub enum Message {
     NextTick(Thunk<'static>),
-    Acceptor(NonBlock<TcpListener>, Box<HttpHandler>),
+    Listener(NonBlock<TcpListener>, Box<HttpHandler>),
     Io(RawFd, Box<RtHandler>),
     Shutdown
 }
@@ -56,4 +57,37 @@ where R: Run + Send + Sync {
         at_exit: at_exit
     })
 }
+
+impl fmt::Debug for Message {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Message::NextTick(_) => fmt.write_str("Message::NextTick(..)"),
+            Message::Listener(_, _) => fmt.write_str("Message::Listener(..)"),
+            Message::Io(raw, _) => write!(fmt, "Message::RawFd({:?}, ..)", raw),
+            Message::Shutdown => fmt.write_str("Message::Shutdown")
+        }
+    }
+}
+
+impl fmt::Debug for TimeoutMessage {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            TimeoutMessage::Later(_, time) =>
+                write!(fmt, "TimeoutMessage::Later(.., {:?})", time)
+        }
+    }
+}
+
+impl fmt::Display for TimeoutMessage {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(self, fmt)
+    }
+}
+
+impl fmt::Display for Message {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(self, fmt)
+    }
+}
+
 

@@ -3,6 +3,7 @@ use std::os::unix::io::{Fd, AsRawFd};
 
 /// Convenience struct for internally handing
 /// raw file descriptors over to the event loop.
+#[derive(Debug, Copy)]
 pub struct RawFd(Fd);
 
 impl AsRawFd for RawFd {
