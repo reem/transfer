@@ -6,6 +6,7 @@ use std::thunk::Thunk;
 use std::sync::Arc;
 use std::error::FromError;
 use std::time::duration::Duration;
+use std::result::Result as StdResult;
 use std::fmt;
 
 use rt::loophandler::LoopHandler;
@@ -16,6 +17,24 @@ use Handler as HttpHandler;
 mod loophandler;
 mod acceptor;
 mod connection;
+
+pub trait Executor: Send + Sync {
+    fn execute(&self, Thunk<'static>);
+
+    fn invoke<T, E>(&self, task: Thunk<'static, (), StdResult<T, E>>) -> Future<T, E>
+    where T: Send + 'static, E: Send + 'static, Self: Sized {
+        let (tx, rx) = Future::pair();
+
+        self.execute(Thunk::new(|| {
+            match task.invoke(()) {
+                Ok(v) => tx.complete(v),
+                Err(e) => tx.fail(e)
+            }
+        }));
+
+        rx
+    }
+}
 
 pub struct Handle {
     channel: mio::Sender<Message>,
@@ -59,7 +78,7 @@ impl Handle {
 }
 
 pub fn start(config: EventLoopConfig, allocator: Arc<Box<Allocator>>,
-             executor: Arc<Box<Run + Send + Sync>>) -> Result<Handle> {
+             executor: Arc<Box<Executor>>) -> Result<Handle> {
     let mut eloop: EventLoop<LoopHandler> = try!(EventLoop::configured(config));
     let mut handler = LoopHandler::new(allocator, executor);
     let channel = eloop.channel();
@@ -70,8 +89,7 @@ pub fn start(config: EventLoopConfig, allocator: Arc<Box<Allocator>>,
     let on_shutdown = {
         let (tx, rx) = Future::pair();
 
-        let executor: &Run = &**local_executor;
-        executor.run(Thunk::new(move || {
+        local_executor.execute(Thunk::new(move || {
             match eloop.run(&mut handler).map_err(FromError::from_error) {
                 Ok(()) => tx.complete(()),
                 Err(e) => tx.fail(e)

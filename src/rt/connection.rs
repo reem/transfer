@@ -6,6 +6,7 @@ use iobuf::{Allocator, AROIobuf, AppendBuf};
 use eventual::Sender;
 
 use rt::loophandler::LoopHandler;
+use rt::Executor;
 
 use prelude::*;
 use Handler as HttpHandler;
@@ -24,7 +25,7 @@ pub struct Connection {
     // Metadata
     handler: Arc<Box<HttpHandler>>,
     allocator: Arc<Box<Allocator>>,
-    executor: Arc<Box<Run + Send + Sync>>
+    executor: Arc<Box<Executor>>
 }
 
 pub enum Snapshot {
@@ -36,7 +37,7 @@ impl Connection {
     pub fn new(stream: NonBlock<TcpStream>,
                handler: Arc<Box<HttpHandler>>,
                allocator: Arc<Box<Allocator>>,
-               executor: Arc<Box<Run + Send + Sync>>) -> Connection {
+               executor: Arc<Box<Executor>>) -> Connection {
         let readbuffer = AppendBuf::new_with_allocator(16 * 1024, allocator.clone());
 
         let (snapshots_tx, spanshots_rx) = Stream::pair();

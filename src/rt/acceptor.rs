@@ -6,6 +6,7 @@ use iobuf::Allocator;
 
 use rt::loophandler::{LoopHandler, Registration};
 use rt::connection::Connection;
+use rt::Executor;
 
 use prelude::*;
 use Handler as HttpHandler;
@@ -14,14 +15,14 @@ pub struct Acceptor {
     listener: NonBlock<TcpListener>,
     handler: Arc<Box<HttpHandler>>,
     allocator: Arc<Box<Allocator>>,
-    executor: Arc<Box<Run + Send + Sync>>
+    executor: Arc<Box<Executor>>
 }
 
 impl Acceptor {
     pub fn new(listener: NonBlock<TcpListener>,
                handler: Arc<Box<HttpHandler>>,
                allocator: Arc<Box<Allocator>>,
-               executor: Arc<Box<Run + Send + Sync>>) -> Acceptor {
+               executor: Arc<Box<Executor>>) -> Acceptor {
         Acceptor {
             listener: listener,
             handler: handler,

@@ -17,8 +17,7 @@ iobuf = "*"
 debug_unreachable = "*"
 
 [dependencies.syncbox]
-git = "https://github.com/reem/syncbox"
-branch = "object-safe-run"
+git = "https://github.com/carllerche/syncbox"
 
 [dependencies.eventual]
 git = "https://github.com/carllerche/eventual"

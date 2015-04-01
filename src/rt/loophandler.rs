@@ -7,19 +7,17 @@ use mio::{self, EventLoop, Token, ReadHint};
 
 use rt::connection::Connection;
 use rt::acceptor::Acceptor;
-use rt::Message;
-
-use syncbox::Run;
+use rt::{Message, Executor};
 
 pub struct LoopHandler {
     pub allocator: Arc<Box<Allocator>>,
-    pub executor: Arc<Box<Run + Send + Sync>>,
+    pub executor: Arc<Box<Executor>>,
     pub slab: Slab<Registration>
 }
 
 impl LoopHandler {
     pub fn new(allocator: Arc<Box<Allocator>>,
-               executor: Arc<Box<Run + Send + Sync>>) -> LoopHandler {
+               executor: Arc<Box<Executor>>) -> LoopHandler {
         LoopHandler {
             allocator: allocator,
             executor: executor,

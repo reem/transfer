@@ -17,7 +17,6 @@ pub use eventual::{Future, Complete, Stream, Sender};
 
 pub mod prelude {
     pub use eventual::{Future, Stream, Join, Async, Select};
-    pub use syncbox::Run;
     pub use {Result, Error, Handler};
 }
 
