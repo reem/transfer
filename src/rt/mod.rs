@@ -24,7 +24,7 @@ pub struct Handle {
 
 pub enum Message {
     NextTick(Thunk<'static>),
-    Listener(NonBlock<TcpListener>, Box<HttpHandler>),
+    Listener(NonBlock<TcpListener>, Arc<Box<HttpHandler>>),
     Timeout(Thunk<'static>, u64),
     Shutdown
 }
@@ -39,7 +39,7 @@ impl Handle {
     }
 
     pub fn register(&self, listener: NonBlock<TcpListener>,
-                    handler: Box<HttpHandler>) -> Result<()> {
+                    handler: Arc<Box<HttpHandler>>) -> Result<()> {
         self.send(Message::Listener(listener, handler))
     }
 
@@ -58,11 +58,10 @@ impl Handle {
     }
 }
 
-pub fn create<R>(config: EventLoopConfig, allocator: Box<Allocator>,
-                 executor: R) -> Result<Handle>
-where R: Run + Send + Sync {
-    let mut eloop: EventLoop<LoopHandler<R>> = try!(EventLoop::configured(config));
-    let mut handler = LoopHandler::new(Arc::new(allocator), Arc::new(executor));
+pub fn create(config: EventLoopConfig, allocator: Arc<Box<Allocator>>,
+              executor: Arc<Box<Run + Send + Sync>>) -> Result<Handle> {
+    let mut eloop: EventLoop<LoopHandler> = try!(EventLoop::configured(config));
+    let mut handler = LoopHandler::new(allocator, executor);
     let channel = eloop.channel();
 
     // Run the event loop on the executor
@@ -71,12 +70,13 @@ where R: Run + Send + Sync {
     let on_shutdown = {
         let (tx, rx) = Future::pair();
 
-        local_executor.run(move || {
+        let executor: &Run = &**local_executor;
+        executor.run(Thunk::new(move || {
             match eloop.run(&mut handler).map_err(FromError::from_error) {
                 Ok(()) => tx.complete(()),
                 Err(e) => tx.fail(e)
             }
-        });
+        }));
 
         rx
     };

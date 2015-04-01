@@ -14,9 +14,14 @@ mio = "*"
 hyper = "*"
 httparse = "*"
 iobuf = "*"
+debug_unreachable = "*"
 
 [dependencies.syncbox]
-git = "https://github.com/carllerche/syncbox"
+git = "https://github.com/reem/syncbox"
+branch = "object-safe-run"
+
+[dependencies.eventual]
+git = "https://github.com/carllerche/eventual"
 
 [dev-dependencies]
 stainless = "*"

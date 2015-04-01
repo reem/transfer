@@ -13,28 +13,32 @@ use Handler as HttpHandler;
 pub struct Acceptor {
     listener: NonBlock<TcpListener>,
     handler: Arc<Box<HttpHandler>>,
-    allocator: Arc<Box<Allocator>>
+    allocator: Arc<Box<Allocator>>,
+    executor: Arc<Box<Run + Send + Sync>>
 }
 
 impl Acceptor {
     pub fn new(listener: NonBlock<TcpListener>,
-               handler: Box<HttpHandler>,
-               allocator: Arc<Box<Allocator>>) -> Acceptor {
+               handler: Arc<Box<HttpHandler>>,
+               allocator: Arc<Box<Allocator>>,
+               executor: Arc<Box<Run + Send + Sync>>) -> Acceptor {
         Acceptor {
             listener: listener,
-            handler: Arc::new(handler),
-            allocator: allocator
+            handler: handler,
+            allocator: allocator,
+            executor: executor
         }
     }
 
-    pub fn readable<R: Run>(mut handler: &mut LoopHandler<R>,
-                            event_loop: &mut EventLoop<LoopHandler<R>>,
-                            token: Token, hint: ReadHint) {
-        let (httphandler, connection, allocator) = {
+    pub fn readable(mut handler: &mut LoopHandler,
+                    event_loop: &mut EventLoop<LoopHandler>,
+                    token: Token, hint: ReadHint) {
+        let (connection, httphandler, allocator, executor) = {
             if let &mut Registration::Acceptor(ref mut acceptor) = &mut handler.slab[token] {
-                (acceptor.handler.clone(),
-                 acceptor.listener.accept(),
-                 acceptor.allocator.clone())
+                (acceptor.listener.accept(),
+                 acceptor.handler.clone(),
+                 acceptor.allocator.clone(),
+                 acceptor.executor.clone())
             } else {
                 unsafe { debug_unreachable!("LoopHandler yielded connection to acceptor.") }
             }
@@ -42,7 +46,7 @@ impl Acceptor {
 
         match connection {
             Ok(Some(connection)) => {
-                let conn = Connection::new(connection, httphandler, allocator);
+                let conn = Connection::new(connection, httphandler, allocator, executor);
                 handler.register(Registration::Connection(conn));
             },
 
@@ -54,9 +58,8 @@ impl Acceptor {
         };
     }
 
-    pub fn writable<R: Run>(handler: &mut LoopHandler<R>,
-                            event_loop: &mut EventLoop<LoopHandler<R>>,
-                            token: Token) {
+    pub fn writable(handler: &mut LoopHandler,
+                    event_loop: &mut EventLoop<LoopHandler>, token: Token) {
         unsafe { debug_unreachable!("Received writable hint on an acceptor.") }
     }
 }

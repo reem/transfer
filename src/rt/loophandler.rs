@@ -11,14 +11,15 @@ use rt::Message;
 
 use syncbox::Run;
 
-pub struct LoopHandler<R: Run> {
+pub struct LoopHandler {
     pub allocator: Arc<Box<Allocator>>,
-    pub executor: Arc<R>,
+    pub executor: Arc<Box<Run + Send + Sync>>,
     pub slab: Slab<Registration>
 }
 
-impl<R> LoopHandler<R> where R: Run {
-    pub fn new(allocator: Arc<Box<Allocator>>, executor: Arc<R>) -> LoopHandler<R> {
+impl LoopHandler {
+    pub fn new(allocator: Arc<Box<Allocator>>,
+               executor: Arc<Box<Run + Send + Sync>>) -> LoopHandler {
         LoopHandler {
             allocator: allocator,
             executor: executor,
@@ -40,11 +41,11 @@ pub enum Registration {
     Acceptor(Acceptor),
 }
 
-impl<R> mio::Handler for LoopHandler<R> where R: Run {
+impl mio::Handler for LoopHandler {
     type Message = Message;
     type Timeout = Thunk<'static>;
 
-    fn readable(&mut self, event_loop: &mut EventLoop<LoopHandler<R>>,
+    fn readable(&mut self, event_loop: &mut EventLoop<LoopHandler>,
                 token: Token, hint: ReadHint) {
         // If a fildes was removed, ignore any hints.
         if !self.slab.contains(token) { return }
@@ -57,7 +58,7 @@ impl<R> mio::Handler for LoopHandler<R> where R: Run {
         }
     }
 
-    fn writable(&mut self, event_loop: &mut EventLoop<LoopHandler<R>>,
+    fn writable(&mut self, event_loop: &mut EventLoop<LoopHandler>,
                 token: Token) {
         // If a fildes was removed, ignore any hints.
         if !self.slab.contains(token) { return }
@@ -74,21 +75,25 @@ impl<R> mio::Handler for LoopHandler<R> where R: Run {
         }
     }
 
-    fn notify(&mut self, event_loop: &mut EventLoop<LoopHandler<R>>,
+    fn notify(&mut self, event_loop: &mut EventLoop<LoopHandler>,
               message: Message) {
         match message {
             Message::NextTick(thunk) => thunk.invoke(()),
             Message::Listener(listener, handler) => {
                 let allocator = self.allocator.clone();
+                let executor = self.executor.clone();
                 self.register(
-                    Registration::Acceptor(Acceptor::new(listener, handler, allocator)))
+                    Registration::Acceptor(
+                        Acceptor::new(listener, handler, allocator, executor)
+                    )
+                )
             },
             Message::Shutdown => event_loop.shutdown(),
             Message::Timeout(thunk, ms) => { let _ = event_loop.timeout_ms(thunk, ms); }
         }
     }
 
-    fn timeout(&mut self, event_loop: &mut EventLoop<LoopHandler<R>>,
+    fn timeout(&mut self, event_loop: &mut EventLoop<LoopHandler>,
                thunk: Thunk<'static>) {
         thunk.invoke(())
     }
