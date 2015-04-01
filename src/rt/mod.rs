@@ -58,8 +58,8 @@ impl Handle {
     }
 }
 
-pub fn create(config: EventLoopConfig, allocator: Arc<Box<Allocator>>,
-              executor: Arc<Box<Run + Send + Sync>>) -> Result<Handle> {
+pub fn start(config: EventLoopConfig, allocator: Arc<Box<Allocator>>,
+             executor: Arc<Box<Run + Send + Sync>>) -> Result<Handle> {
     let mut eloop: EventLoop<LoopHandler> = try!(EventLoop::configured(config));
     let mut handler = LoopHandler::new(allocator, executor);
     let channel = eloop.channel();

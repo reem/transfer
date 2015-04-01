@@ -4,7 +4,7 @@
 #![allow(unused_variables)]
 // #![deny(missing_docs)]
 
-//! # Falcon
+//! # Transfer
 
 extern crate mio;
 extern crate hyper;

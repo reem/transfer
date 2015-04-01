@@ -34,16 +34,13 @@ pub enum Snapshot {
 
 impl Connection {
     pub fn new(stream: NonBlock<TcpStream>,
-               chandler: Arc<Box<HttpHandler>>,
-               callocator: Arc<Box<Allocator>>,
-               cexecutor: Arc<Box<Run + Send + Sync>>) -> Connection {
-        let (handler, allocator, executor) = (chandler.clone(), callocator.clone(), cexecutor.clone());
+               handler: Arc<Box<HttpHandler>>,
+               allocator: Arc<Box<Allocator>>,
+               executor: Arc<Box<Run + Send + Sync>>) -> Connection {
         let readbuffer = AppendBuf::new_with_allocator(16 * 1024, allocator.clone());
 
         let (snapshots_tx, spanshots_rx) = Stream::pair();
         let (responses_tx, responses_rx) = Stream::pair();
-
-
 
         Connection {
             stream: stream,
