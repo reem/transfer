@@ -2,30 +2,25 @@ use std::sync::Arc;
 
 use mio::{NonBlock, EventLoop, ReadHint, Token};
 use mio::tcp::TcpStream;
-use iobuf::{Allocator, AROIobuf, AppendBuf};
+use iobuf::{AROIobuf, AppendBuf};
 use eventual::Sender;
 
 use rt::loophandler::LoopHandler;
-use rt::Executor;
+use rt::{Executor, Metadata};
 
+use http;
 use prelude::*;
 use Handler as HttpHandler;
 
-struct Response;
-struct BodyMessage;
+pub struct Response;
+pub struct BodyMessage;
 
 pub struct Connection {
     stream: NonBlock<TcpStream>,
-
-    // Communication with the handling actors.
+    metadata: Metadata,
     readbuffer: AppendBuf<'static>,
     snapshots: Sender<Snapshot, Error>,
-    responses: Stream<Response, Error>,
-
-    // Metadata
-    handler: Arc<Box<HttpHandler>>,
-    allocator: Arc<Box<Allocator>>,
-    executor: Arc<Box<Executor>>
+    responses: Stream<Response, Error>
 }
 
 pub enum Snapshot {
@@ -36,23 +31,23 @@ pub enum Snapshot {
 impl Connection {
     pub fn new(stream: NonBlock<TcpStream>,
                handler: Arc<Box<HttpHandler>>,
-               allocator: Arc<Box<Allocator>>,
-               executor: Arc<Box<Executor>>) -> Connection {
-        let readbuffer = AppendBuf::new_with_allocator(16 * 1024, allocator.clone());
-
+               metadata: Metadata) -> Connection {
+        let readbuffer = AppendBuf::new_with_allocator(32 * 1024,
+                                                       metadata.allocator.clone());
         let (snapshots_tx, spanshots_rx) = Stream::pair();
         let (responses_tx, responses_rx) = Stream::pair();
 
+        let metadata1 = metadata.clone();
+        metadata.executor.execute(Box::new(move || {
+            http::handle_connection(metadata1, handler, spanshots_rx, responses_tx);
+        }));
+
         Connection {
             stream: stream,
-
+            metadata: metadata,
             readbuffer: readbuffer,
             snapshots: snapshots_tx,
             responses: responses_rx,
-
-            handler: handler,
-            allocator: allocator,
-            executor: executor
         }
     }
 

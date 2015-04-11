@@ -1,26 +1,21 @@
-use std::sync::Arc;
 use std::thunk::Thunk;
 
-use iobuf::Allocator;
 use mio::util::Slab;
 use mio::{self, EventLoop, Token, ReadHint};
 
 use rt::connection::Connection;
 use rt::acceptor::Acceptor;
-use rt::{Message, Executor};
+use rt::{Message, Executor, Metadata};
 
 pub struct LoopHandler {
-    pub allocator: Arc<Box<Allocator>>,
-    pub executor: Arc<Box<Executor>>,
+    pub metadata: Metadata,
     pub slab: Slab<Registration>
 }
 
 impl LoopHandler {
-    pub fn new(allocator: Arc<Box<Allocator>>,
-               executor: Arc<Box<Executor>>) -> LoopHandler {
+    pub fn new(metadata: Metadata) -> LoopHandler {
         LoopHandler {
-            allocator: allocator,
-            executor: executor,
+            metadata: metadata,
             slab: Slab::new(32 * 1024)
         }
     }
@@ -76,13 +71,12 @@ impl mio::Handler for LoopHandler {
     fn notify(&mut self, event_loop: &mut EventLoop<LoopHandler>,
               message: Message) {
         match message {
-            Message::NextTick(thunk) => thunk.invoke(()),
+            Message::NextTick(thunk) => thunk(),
             Message::Listener(listener, handler) => {
-                let allocator = self.allocator.clone();
-                let executor = self.executor.clone();
+                let metadata = self.metadata.clone();
                 self.register(
                     Registration::Acceptor(
-                        Acceptor::new(listener, handler, allocator, executor)
+                        Acceptor::new(listener, handler, metadata)
                     )
                 )
             },
@@ -93,7 +87,7 @@ impl mio::Handler for LoopHandler {
 
     fn timeout(&mut self, event_loop: &mut EventLoop<LoopHandler>,
                thunk: Thunk<'static>) {
-        thunk.invoke(())
+        thunk()
     }
 }
 

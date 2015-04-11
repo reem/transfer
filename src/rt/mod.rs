@@ -1,10 +1,8 @@
 use mio::{self, EventLoop, EventLoopConfig, NonBlock};
 use mio::tcp::TcpListener;
-use iobuf::Allocator;
 
 use std::thunk::Thunk;
 use std::sync::Arc;
-use std::error::FromError;
 use std::time::duration::Duration;
 use std::result::Result as StdResult;
 use std::fmt;
@@ -14,9 +12,11 @@ use rt::loophandler::LoopHandler;
 use prelude::*;
 use Handler as HttpHandler;
 
-mod loophandler;
-mod acceptor;
-mod connection;
+pub mod acceptor;
+pub mod connection;
+
+pub use rt::metadata::Metadata;
+pub use iobuf::Allocator;
 
 pub trait Executor: Send + Sync {
     fn execute(&self, Thunk<'static>);
@@ -25,8 +25,8 @@ pub trait Executor: Send + Sync {
     where T: Send + 'static, E: Send + 'static, Self: Sized {
         let (tx, rx) = Future::pair();
 
-        self.execute(Thunk::new(|| {
-            match task.invoke(()) {
+        self.execute(Box::new(|| {
+            match task() {
                 Ok(v) => tx.complete(v),
                 Err(e) => tx.fail(e)
             }
@@ -54,7 +54,7 @@ pub enum TimeoutMessage {
 
 impl Handle {
     pub fn on_next_tick<F: FnOnce() + Send + 'static>(&self, cb: F) -> Result<()> {
-        self.send(Message::NextTick(Thunk::new(cb)))
+        self.send(Message::NextTick(Box::new(cb)))
     }
 
     pub fn register(&self, listener: NonBlock<TcpListener>,
@@ -64,7 +64,7 @@ impl Handle {
 
     pub fn timeout_ms<F>(&self, cb: F, ms: u64) -> Result<()>
     where F: FnOnce() + Send + 'static {
-        self.send(Message::Timeout(Thunk::new(cb), ms))
+        self.send(Message::Timeout(Box::new(cb), ms))
     }
 
     pub fn shutdown(self) -> Result<Future<(), Error>> {
@@ -77,20 +77,19 @@ impl Handle {
     }
 }
 
-pub fn start(config: EventLoopConfig, allocator: Arc<Box<Allocator>>,
-             executor: Arc<Box<Executor>>) -> Result<Handle> {
+pub fn start(config: EventLoopConfig, metadata: Metadata) -> Result<Handle> {
     let mut eloop: EventLoop<LoopHandler> = try!(EventLoop::configured(config));
-    let mut handler = LoopHandler::new(allocator, executor);
+    let mut handler = LoopHandler::new(metadata);
     let channel = eloop.channel();
 
     // Run the event loop on the executor
-    let local_executor = handler.executor.clone();
+    let local_executor = handler.metadata.executor.clone();
 
     let on_shutdown = {
         let (tx, rx) = Future::pair();
 
-        local_executor.execute(Thunk::new(move || {
-            match eloop.run(&mut handler).map_err(FromError::from_error) {
+        local_executor.execute(Box::new(move || {
+            match eloop.run(&mut handler).map_err(From::from) {
                 Ok(()) => tx.complete(()),
                 Err(e) => tx.fail(e)
             }
@@ -123,4 +122,6 @@ impl fmt::Display for Message {
     }
 }
 
+mod loophandler;
+mod metadata;
 

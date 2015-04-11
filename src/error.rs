@@ -1,5 +1,4 @@
 use std::{io, fmt};
-use std::error::FromError;
 use std::error::Error as StdError;
 
 use mio::NotifyError;
@@ -50,14 +49,14 @@ impl StdError for Error {
     }
 }
 
-impl FromError<io::Error> for Error {
-    fn from_error(err: io::Error) -> Error {
+impl From<io::Error> for Error {
+    fn from(err: io::Error) -> Error {
         Error::Io(err)
     }
 }
 
-impl FromError<NotifyError<::rt::Message>> for Error {
-    fn from_error(err: NotifyError<::rt::Message>) -> Error {
+impl From<NotifyError<::rt::Message>> for Error {
+    fn from(err: NotifyError<::rt::Message>) -> Error {
         match err {
             NotifyError::Io(io) => Error::Io(io),
             NotifyError::Full(m) => Error::NotifyQueueFull(m)
@@ -65,8 +64,8 @@ impl FromError<NotifyError<::rt::Message>> for Error {
     }
 }
 
-impl FromError<AsyncError<()>> for Error {
-    fn from_error(err: AsyncError<()>) -> Error {
+impl From<AsyncError<()>> for Error {
+    fn from(err: AsyncError<()>) -> Error {
         Error::Async(err)
     }
 }

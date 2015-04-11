@@ -15,17 +15,19 @@ extern crate eventual;
 
 pub use eventual::{Future, Complete, Stream, Sender};
 
-pub mod prelude {
-    pub use eventual::{Future, Stream, Join, Async, Select};
-    pub use {Result, Error, Handler};
-}
-
 #[macro_use]
 extern crate debug_unreachable;
 
 pub use error::{Result, Error};
 
 pub trait Handler: Send + Sync + 'static {}
+
+pub mod prelude {
+    pub use eventual::{Future, Stream, Join, Async, Select};
+    pub use {Result, Error, Handler};
+}
+
+pub mod http;
 
 /// Falcon's Error type and associated impls.
 pub mod error;

@@ -2,44 +2,38 @@ use std::sync::Arc;
 
 use mio::{NonBlock, EventLoop, ReadHint, Token};
 use mio::tcp::TcpListener;
-use iobuf::Allocator;
 
 use rt::loophandler::{LoopHandler, Registration};
 use rt::connection::Connection;
-use rt::Executor;
+use rt::Metadata;
 
-use prelude::*;
 use Handler as HttpHandler;
 
 pub struct Acceptor {
     listener: NonBlock<TcpListener>,
     handler: Arc<Box<HttpHandler>>,
-    allocator: Arc<Box<Allocator>>,
-    executor: Arc<Box<Executor>>
+    metadata: Metadata
 }
 
 impl Acceptor {
     pub fn new(listener: NonBlock<TcpListener>,
                handler: Arc<Box<HttpHandler>>,
-               allocator: Arc<Box<Allocator>>,
-               executor: Arc<Box<Executor>>) -> Acceptor {
+               metadata: Metadata) -> Acceptor {
         Acceptor {
             listener: listener,
             handler: handler,
-            allocator: allocator,
-            executor: executor
+            metadata: metadata
         }
     }
 
     pub fn readable(mut handler: &mut LoopHandler,
                     event_loop: &mut EventLoop<LoopHandler>,
                     token: Token, hint: ReadHint) {
-        let (connection, httphandler, allocator, executor) = {
+        let (connection, httphandler, metadata) = {
             if let &mut Registration::Acceptor(ref mut acceptor) = &mut handler.slab[token] {
                 (acceptor.listener.accept(),
                  acceptor.handler.clone(),
-                 acceptor.allocator.clone(),
-                 acceptor.executor.clone())
+                 acceptor.metadata.clone())
             } else {
                 unsafe { debug_unreachable!("LoopHandler yielded connection to acceptor.") }
             }
@@ -47,12 +41,12 @@ impl Acceptor {
 
         match connection {
             Ok(Some(connection)) => {
-                let conn = Connection::new(connection, httphandler, allocator, executor);
+                let conn = Connection::new(connection, httphandler, metadata);
                 handler.register(Registration::Connection(conn));
             },
 
             Ok(None) => {
-                unsafe { debug_unreachable!("Incorrect readable hint.") }
+                panic!("Incorrect readable hint.");
             }
 
             Err(_) => { }

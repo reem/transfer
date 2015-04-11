@@ -10,14 +10,16 @@ license = "MIT"
 keywords = ["web", "railgun"]
 
 [dependencies]
-mio = "*"
 hyper = "*"
 httparse = "*"
-iobuf = "*"
 debug_unreachable = "*"
+iobuf = "*"
 
 [dependencies.syncbox]
 git = "https://github.com/carllerche/syncbox"
+
+[dependencies.mio]
+git = "https://github.com/carllerche/mio"
 
 [dependencies.eventual]
 git = "https://github.com/carllerche/eventual"
