@@ -5,7 +5,7 @@ use mio::{self, EventLoop, Token, ReadHint};
 
 use rt::connection::Connection;
 use rt::acceptor::Acceptor;
-use rt::{Message, Executor, Metadata};
+use rt::{Message, Metadata};
 
 pub struct LoopHandler {
     pub metadata: Metadata,

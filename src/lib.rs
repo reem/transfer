@@ -24,14 +24,15 @@ pub trait Handler: Send + Sync + 'static {}
 
 pub mod prelude {
     pub use eventual::{Future, Stream, Join, Async, Select};
+    pub use iobuf::Iobuf;
     pub use {Result, Error, Handler};
 }
 
 pub mod http;
 
-/// Falcon's Error type and associated impls.
+/// Transfer's Error type and associated impls.
 pub mod error;
 
-/// Falcon's runtime, including the event loop.
+/// Transfer's runtime, including the event loop.
 pub mod rt;
 
