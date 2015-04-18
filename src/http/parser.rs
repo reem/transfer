@@ -1,11 +1,13 @@
 use httparse as parser;
-use iobuf::AROIobuf;
+use iobuf::{AROIobuf, RWIobuf};
+
+use std::{raw, mem};
 
 use prelude::*;
 
 pub const MAX_HEADERS: usize = 256;
 
-pub struct RawHeader(pub AROIobuf);
+pub struct RawHeader(pub AROIobuf, pub AROIobuf);
 pub struct RawMethod(pub AROIobuf);
 pub struct RawPath(pub AROIobuf);
 
@@ -53,7 +55,7 @@ impl RawRequest {
         Ok(RawRequest {
             method: method,
             path: path,
-            headers: panic!("Unimplemented: convert headers to RawHeader."),
+            headers: unsafe { convert_headers(buf, headers) },
             num_headers: num_headers,
             head_size: head_size
         })
@@ -81,10 +83,71 @@ impl RawResponse {
         Ok(RawResponse {
             version: version,
             code: code,
-            headers: panic!("Unimplemented: convert headers to RawHeader."),
+            headers: unsafe { convert_headers(buf, headers) },
             num_headers: num_headers,
             head_size: head_size
         })
+    }
+}
+
+/// Convert a slice from a given AROIobuf into an AROIobuf over the same region.
+unsafe fn convert_slice<'a>(buf: &AROIobuf, slice: &'a [u8]) -> AROIobuf {
+    let bufstart = buf.as_window_slice().as_ptr() as u32;
+    let raw::Slice { data, len } = mem::transmute::<&[u8], raw::Slice<u8>>(slice);
+
+    let start_offset = (data as u32) - bufstart;
+    let end_offset = start_offset + (len as u32);
+
+    let mut outbuf = buf.clone();
+    outbuf.sub_window(start_offset, end_offset);
+    outbuf
+}
+
+unsafe fn convert_headers<'a>(buf: AROIobuf, headers: [parser::Header<'a>; MAX_HEADERS]) -> [RawHeader; MAX_HEADERS] {
+    let mut outheaders = initialize_blank_headers();
+
+    for (inheader, outheader) in headers.iter().zip(outheaders.iter_mut()) {
+        *outheader = RawHeader(unsafe { convert_slice(&buf, inheader.name.as_bytes()) },
+                               unsafe { convert_slice(&buf, inheader.value) });
+    }
+
+    outheaders
+}
+
+fn initialize_blank_headers() -> [RawHeader; MAX_HEADERS] {
+    let mut headers: [RawHeader; MAX_HEADERS] = unsafe { mem::uninitialized() };
+
+    {
+        let headers_slice: &mut [RawHeader] = &mut headers;
+        for uninit_header in headers_slice {
+            *uninit_header = {
+                let onebuf = RWIobuf::new(0).atomic_read_only().unwrap();
+                let twobuf = RWIobuf::new(0).atomic_read_only().unwrap();
+                RawHeader(onebuf, twobuf)
+            };
+        }
+    }
+
+    headers
+}
+
+#[cfg(test)]
+mod tests {
+    use prelude::*;
+    use super::convert_slice;
+
+    use iobuf::{AROIobuf, RWIobuf};
+
+    fn aroiobuf(buf: &str) -> AROIobuf {
+        RWIobuf::from_str_copy(buf).atomic_read_only().ok().unwrap()
+    }
+
+    #[test]
+    fn test_slice_to_buf() {
+        let abuf = aroiobuf("hello world");
+        let slice = &unsafe { abuf.as_window_slice() }[3..];
+        let converted = convert_slice(abuf, slice);
+        assert_eq!(b"llo world", unsafe { converted.as_window_slice() });
     }
 }
 
