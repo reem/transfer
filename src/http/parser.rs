@@ -12,6 +12,7 @@ pub struct RawMethod(pub AROIobuf);
 pub struct RawPath(pub AROIobuf);
 
 pub struct RawRequest {
+    pub version: u8,
     pub method: RawMethod,
     pub path: RawPath,
     pub headers: [RawHeader; MAX_HEADERS],
@@ -38,42 +39,61 @@ impl RawRequest {
     pub fn new(buf: AROIobuf) -> Result<RawRequest> {
         let mut headers = [parser::EMPTY_HEADER; MAX_HEADERS];
 
-        let (method, path, num_headers, head_size) = {
-            let mut parser_request = parser::Request::new(&mut headers);
-            let bytes = unsafe { buf.as_window_slice() };
-
-            match parser_request.parse(bytes) {
-                Ok(parser::Status::Complete(head_size)) => {
-                    // TODO: Implement
-                    panic!("Unimplemented: convert slices to iobufs.")
-                },
-                Ok(parser::Status::Partial) => return Err(Error::Incomplete),
-                Err(err) => return Err(Error::Parse(err))
-            }
-        };
+        let (version, method, path, num_headers, head_size) =
+            try!(parse_request(&buf, unsafe { buf.as_window_slice() }, &mut headers));
 
         Ok(RawRequest {
+            version: version,
             method: method,
             path: path,
-            headers: unsafe { convert_headers(buf, headers) },
+            headers: unsafe { convert_headers(&buf, headers) },
             num_headers: num_headers,
             head_size: head_size
         })
     }
 }
 
+fn parse_request<'a, 'b>(buf: &AROIobuf, bytes: &'a [u8],
+                         headers: &'b mut [parser::Header<'a>])
+        -> Result<(u8, RawMethod, RawPath, usize, usize)> {
+    let mut parser_request = parser::Request::new(headers);
+
+    match parser_request.parse(bytes) {
+        Ok(parser::Status::Complete(head_size)) => {
+            Ok((
+                parser_request.version.unwrap(),
+                RawMethod(unsafe {
+                    convert_slice(&buf, parser_request.method.unwrap().as_bytes())
+                }),
+                RawPath(unsafe {
+                    convert_slice(&buf, parser_request.path.unwrap().as_bytes())
+                }),
+                parser_request.headers.len(),
+                head_size
+            ))
+        },
+        Ok(parser::Status::Partial) => return Err(Error::Incomplete),
+        Err(err) => return Err(Error::Parse(err))
+    }
+}
+
 impl RawResponse {
-    pub fn parse(buf: AROIobuf) -> Result<RawResponse> {
+    pub fn parse(buf: &AROIobuf) -> Result<RawResponse> {
         let mut headers = [parser::EMPTY_HEADER; MAX_HEADERS];
 
         let (version, code, num_headers, head_size) = {
-            let mut parser_response = parser::Request::new(&mut headers);
+            let mut header_borrow: &mut [parser::Header] = &mut headers;
+            let mut parser_response = parser::Response::new(header_borrow);
             let bytes = unsafe { buf.as_window_slice() };
 
             match parser_response.parse(bytes) {
                 Ok(parser::Status::Complete(head_size)) => {
-                    // TODO: Implement
-                    panic!("Unimplemented: convert slices to iobufs.")
+                    (
+                        parser_response.version.unwrap(),
+                        parser_response.code.unwrap(),
+                        parser_response.headers.len(),
+                        head_size
+                    )
                 },
                 Ok(parser::Status::Partial) => return Err(Error::Incomplete),
                 Err(err) => return Err(Error::Parse(err))
@@ -103,7 +123,7 @@ unsafe fn convert_slice<'a>(buf: &AROIobuf, slice: &'a [u8]) -> AROIobuf {
     outbuf
 }
 
-unsafe fn convert_headers<'a>(buf: AROIobuf, headers: [parser::Header<'a>; MAX_HEADERS]) -> [RawHeader; MAX_HEADERS] {
+unsafe fn convert_headers<'a>(buf: &AROIobuf, headers: [parser::Header<'a>; MAX_HEADERS]) -> [RawHeader; MAX_HEADERS] {
     let mut outheaders = initialize_blank_headers();
 
     for (inheader, outheader) in headers.iter().zip(outheaders.iter_mut()) {
