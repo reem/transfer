@@ -17,7 +17,8 @@ pub struct RawRequest {
     pub path: RawPath,
     pub headers: [RawHeader; MAX_HEADERS],
     pub num_headers: usize,
-    pub head_size: usize
+    pub head_size: usize,
+    pub buffer: AROIobuf
 }
 
 pub struct RawResponse {
@@ -25,7 +26,8 @@ pub struct RawResponse {
     pub code: u16,
     pub headers: [RawHeader; MAX_HEADERS],
     pub num_headers: usize,
-    pub head_size: usize
+    pub head_size: usize,
+    pub buffer: AROIobuf
 }
 
 pub enum Error {
@@ -48,7 +50,8 @@ impl RawRequest {
             path: path,
             headers: unsafe { convert_headers(&buf, headers) },
             num_headers: num_headers,
-            head_size: head_size
+            head_size: head_size,
+            buffer: buf
         })
     }
 }
@@ -105,7 +108,8 @@ impl RawResponse {
             code: code,
             headers: unsafe { convert_headers(buf, headers) },
             num_headers: num_headers,
-            head_size: head_size
+            head_size: head_size,
+            buffer: buf
         })
     }
 }
