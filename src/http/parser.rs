@@ -51,7 +51,7 @@ impl RawRequest {
             headers: unsafe { convert_headers(&buf, headers) },
             num_headers: num_headers,
             head_size: head_size,
-            buffer: buf
+            buffer: buf.clone()
         })
     }
 }
@@ -109,7 +109,7 @@ impl RawResponse {
             headers: unsafe { convert_headers(buf, headers) },
             num_headers: num_headers,
             head_size: head_size,
-            buffer: buf
+            buffer: buf.clone()
         })
     }
 }

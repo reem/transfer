@@ -20,9 +20,11 @@ pub use iobuf::Allocator;
 
 pub trait Executor: Send + Sync {
     fn execute(&self, Thunk<'static>);
+}
 
-    fn invoke<T, E>(&self, task: Thunk<'static, (), StdResult<T, E>>) -> Future<T, E>
-    where T: Send + 'static, E: Send + 'static, Self: Sized {
+impl Executor {
+    pub fn invoke<T, E>(&self, task: Thunk<'static, (), StdResult<T, E>>) -> Future<T, E>
+    where T: Send + 'static, E: Send + 'static {
         let (tx, rx) = Future::pair();
 
         self.execute(Box::new(|| {

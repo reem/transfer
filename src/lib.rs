@@ -20,7 +20,9 @@ extern crate debug_unreachable;
 
 pub use error::{Result, Error};
 
-pub trait Handler: Send + Sync + 'static {}
+pub trait Handler: Send + Sync + 'static {
+    fn handle(&self, http::Request, http::Response);
+}
 
 pub mod prelude {
     pub use eventual::{Future, Stream, Join, Async, Select};

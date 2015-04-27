@@ -1,10 +1,3 @@
-use std::sync::Arc;
-
-use eventual::Sender;
-
-use rt::connection::Snapshot;
-use rt::Metadata;
-
 use prelude::*;
 
 pub mod parser;
