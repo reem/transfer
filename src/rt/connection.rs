@@ -8,46 +8,57 @@ use eventual::Sender;
 use rt::loophandler::LoopHandler;
 use rt::{Executor, Metadata};
 
-use http;
+use http::parser::{RawRequest, RawResponse};
+use http::{Request, Response};
+
 use prelude::*;
 use Handler as HttpHandler;
 
-pub struct Response;
-pub struct BodyMessage;
+pub const MAX_REQUEST_HEAD_LENGTH: usize = 16 * 1024;
+
+pub struct ReadEvidence;
 
 pub struct Connection {
     stream: NonBlock<TcpStream>,
     metadata: Metadata,
-    readbuffer: AppendBuf<'static>,
-    snapshots: Sender<Snapshot, Error>,
-    responses: Stream<Response, Error>
+    requests: Sender<(RawRequest, RawResponse), Error>,
+    state: ConnectionState
 }
 
-pub enum Snapshot {
-    Head(AROIobuf),
-    Body(BodyMessage)
+enum ConnectionState {
+    Head(AppendBuf<'static>),
+    ReadyBody(Sender<ReadEvidence, Error>),
+    BusyBody(BusySender<ReadEvidence, Error>)
 }
 
 impl Connection {
     pub fn new(stream: NonBlock<TcpStream>,
                handler: Arc<Box<HttpHandler>>,
                metadata: Metadata) -> Connection {
-        let readbuffer = AppendBuf::new_with_allocator(32 * 1024,
+        let readbuffer = AppendBuf::new_with_allocator(MAX_REQUEST_HEAD_LENGTH,
                                                        metadata.allocator.clone());
-        let (snapshots_tx, spanshots_rx) = Stream::pair();
-        let (responses_tx, responses_rx) = Stream::pair();
 
-        let metadata1 = metadata.clone();
-        metadata.executor.execute(Box::new(move || {
-            http::handle_connection(metadata1, handler, spanshots_rx, responses_tx);
-        }));
+        let (requests_tx, requests_rx) = Stream::pair();
+
+        // Set up the connection to be handled properly when the stream is completed.
+        // Each request will be fired on the rt executor, and *only one* request will be
+        // handled at once.
+        //
+        // If more than one request is yielded from the same connection at the same time
+        // semantic errors can easily occur due to the stream-of-evidence style used
+        // for request bodies.
+        let executor = metadata.executor.clone();
+        requests_rx.map_async(move |(raw_req, raw_res)| {
+            executor.invoke(move || {
+                handler.handle(Request::from_raw(raw_req), Response::from_raw(raw_res));
+            })
+        }).fire();
 
         Connection {
             stream: stream,
             metadata: metadata,
-            readbuffer: readbuffer,
-            snapshots: snapshots_tx,
-            responses: responses_rx,
+            requests: requests_tx,
+            state: ConnectionState::Head(readbuffer)
         }
     }
 
