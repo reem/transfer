@@ -15,7 +15,7 @@ extern crate eventual;
 
 pub use eventual::{Future, Complete, Stream, Sender};
 
-#[macro_use]
+#[macro_use(debug_unreachable)]
 extern crate debug_unreachable;
 
 pub use error::{Result, Error};
@@ -38,3 +38,5 @@ pub mod error;
 /// Transfer's runtime, including the event loop.
 pub mod rt;
 
+/// HTTP/2 Frame Encoding and Decoding
+mod frame;
