@@ -38,5 +38,3 @@ pub mod error;
 /// Transfer's runtime, including the event loop.
 pub mod rt;
 
-/// HTTP/2 Frame Encoding and Decoding
-mod frame;
