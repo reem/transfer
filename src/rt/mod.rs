@@ -1,9 +1,8 @@
-use mio::{self, EventLoop, EventLoopConfig, NonBlock};
+use mio::{self, NonBlock, EventLoop, EventLoopConfig};
 use mio::tcp::TcpListener;
 
 use std::thunk::Thunk;
 use std::sync::Arc;
-use std::time::duration::Duration;
 use std::result::Result as StdResult;
 use std::fmt;
 
@@ -48,10 +47,6 @@ pub enum Message {
     Listener(NonBlock<TcpListener>, Arc<Box<HttpHandler>>),
     Timeout(Thunk<'static>, u64),
     Shutdown
-}
-
-pub enum TimeoutMessage {
-    Later(Thunk<'static>, Duration)
 }
 
 impl Handle {

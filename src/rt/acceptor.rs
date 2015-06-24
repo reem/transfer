@@ -35,7 +35,7 @@ impl Acceptor {
                  acceptor.handler.clone(),
                  acceptor.metadata.clone())
             } else {
-                unsafe { debug_unreachable!("LoopHandler yielded connection to acceptor.") }
+                unreachable!("LoopHandler yielded connection to acceptor.")
             }
         };
 
@@ -45,9 +45,8 @@ impl Acceptor {
                 handler.register(Registration::Connection(conn));
             },
 
-            Ok(None) => {
-                panic!("Incorrect readable hint.");
-            }
+            // Another thread beat us to accepting.
+            Ok(None) => { () }
 
             Err(_) => { }
         };
@@ -55,7 +54,7 @@ impl Acceptor {
 
     pub fn writable(handler: &mut LoopHandler,
                     event_loop: &mut EventLoop<LoopHandler>, token: Token) {
-        unsafe { debug_unreachable!("Received writable hint on an acceptor.") }
+        unreachable!("Received writable hint on an acceptor.")
     }
 }
 
