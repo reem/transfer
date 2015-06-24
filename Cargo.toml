@@ -10,17 +10,10 @@ license = "MIT"
 keywords = ["web"]
 
 [dependencies]
-hyper = "*"
-httparse = "*"
+http2parse = "*"
 debug_unreachable = "*"
-iobuf = "*"
-
-[dependencies.syncbox]
-git = "https://github.com/carllerche/syncbox"
-
-[dependencies.mio]
-git = "https://github.com/carllerche/mio"
-
-[dependencies.eventual]
-git = "https://github.com/carllerche/eventual"
+iobuf = { git = "https://github.com/reem/iobuf", branch = "nightly-rustup" }
+syncbox = "*"
+eventual = { git = "https://github.com/carllerche/eventual" }
+mio = { git = "https://github.com/carllerche/mio" }
 
