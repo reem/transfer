@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use mio::{NonBlock, EventLoop, ReadHint, Token};
+use mio::{EventLoop, ReadHint, Token};
 use mio::tcp::TcpListener;
 
 use rt::loophandler::{LoopHandler, Registration};
@@ -10,13 +10,13 @@ use rt::Metadata;
 use Handler as HttpHandler;
 
 pub struct Acceptor {
-    listener: NonBlock<TcpListener>,
+    listener: TcpListener,
     handler: Arc<Box<HttpHandler>>,
     metadata: Metadata
 }
 
 impl Acceptor {
-    pub fn new(listener: NonBlock<TcpListener>,
+    pub fn new(listener: TcpListener,
                handler: Arc<Box<HttpHandler>>,
                metadata: Metadata) -> Acceptor {
         Acceptor {

@@ -27,6 +27,10 @@ impl Connection {
         let readbuffer = AppendBuf::new_with_allocator(MAX_REQUEST_HEAD_LENGTH,
                                                        metadata.allocator.clone());
 
+        Connection {
+            stream: stream,
+            metadata: metadata
+        }
     }
 
     pub fn readable(handler: &mut LoopHandler,

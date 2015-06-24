@@ -1,4 +1,4 @@
-use mio::{self, NonBlock, EventLoop, EventLoopConfig};
+use mio::{self, EventLoop, EventLoopConfig};
 use mio::tcp::TcpListener;
 
 use std::thunk::Thunk;
@@ -44,7 +44,7 @@ pub struct Handle {
 
 pub enum Message {
     NextTick(Thunk<'static>),
-    Listener(NonBlock<TcpListener>, Arc<Box<HttpHandler>>),
+    Listener(TcpListener, Arc<Box<HttpHandler>>),
     Timeout(Thunk<'static>, u64),
     Shutdown
 }
@@ -54,7 +54,7 @@ impl Handle {
         self.send(Message::NextTick(Box::new(cb)))
     }
 
-    pub fn register(&self, listener: NonBlock<TcpListener>,
+    pub fn register(&self, listener: TcpListener,
                     handler: Arc<Box<HttpHandler>>) -> Result<()> {
         self.send(Message::Listener(listener, handler))
     }
