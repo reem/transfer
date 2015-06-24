@@ -10,6 +10,7 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 pub enum Error {
     Io(io::Error),
     NotifyQueueFull(::rt::Message),
+    NotifyQueueClosed,
     Async(AsyncError<()>),
     Executor
 }
@@ -18,25 +19,27 @@ impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Error::Io(ref io) =>
-                write!(fmt, "Falcon Error: {}", io),
+                write!(fmt, "Transfer Error: {}", io),
             Error::NotifyQueueFull(_) =>
-                fmt.write_str("Falcon Error: Notify Queue Full"),
+                fmt.write_str("Transfer Error: Notify Queue Full"),
             Error::Async(ref async) =>
                 match *async {
                     AsyncError::Aborted =>
-                        fmt.write_str("Falcon Error: Asynchronous Action Aborted"),
+                        fmt.write_str("Transfer Error: Asynchronous Action Aborted"),
                     AsyncError::Failed(()) =>
-                        fmt.write_str("Falcon Error: Asynchronous Action Failed")
+                        fmt.write_str("Transfer Error: Asynchronous Action Failed")
                 },
             Error::Executor =>
-                fmt.write_str("Falcon Error: Executor Error.")
+                fmt.write_str("Transfer Error: Executor Error."),
+            Error::NotifyQueueClosed =>
+                fmt.write_str("Transfer Error: Notify Queue is Closed")
         }
     }
 }
 
 impl StdError for Error {
     fn description(&self) -> &str {
-        "Falcon Error"
+        "Transfer Error"
     }
 
     fn cause(&self) -> Option<&StdError> {
@@ -44,7 +47,8 @@ impl StdError for Error {
             Error::Io(ref io) => Some(io),
             Error::NotifyQueueFull(_) => None,
             Error::Async(_) => None, // TODO: File in syncbox to implement Error
-            Error::Executor => None
+            Error::Executor => None,
+            Error::NotifyQueueClosed => None
         }
     }
 }
@@ -59,7 +63,8 @@ impl From<NotifyError<::rt::Message>> for Error {
     fn from(err: NotifyError<::rt::Message>) -> Error {
         match err {
             NotifyError::Io(io) => Error::Io(io),
-            NotifyError::Full(m) => Error::NotifyQueueFull(m)
+            NotifyError::Full(m) => Error::NotifyQueueFull(m),
+            NotifyError::Closed(_) => Error::NotifyQueueClosed
         }
     }
 }
