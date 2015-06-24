@@ -1,4 +1,4 @@
-#![feature(core, std_misc, box_syntax)]
+#![feature(box_syntax, raw, thunk)]
 #![cfg_attr(test, deny(warnings))]
 #![cfg_attr(test, feature(test))]
 #![allow(unused_variables)]
@@ -7,8 +7,7 @@
 //! # Transfer
 
 extern crate mio;
-extern crate hyper;
-extern crate httparse;
+extern crate http2parse;
 extern crate iobuf;
 extern crate syncbox;
 extern crate eventual;
@@ -21,7 +20,7 @@ extern crate debug_unreachable;
 pub use error::{Result, Error};
 
 pub trait Handler: Send + Sync + 'static {
-    fn handle(&self, http::Request, http::Response);
+    fn handle(&self);
 }
 
 pub mod prelude {
@@ -37,4 +36,6 @@ pub mod error;
 
 /// Transfer's runtime, including the event loop.
 pub mod rt;
+
+mod util;
 
