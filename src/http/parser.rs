@@ -62,7 +62,8 @@ pub enum Payload {
         data: AROIobuf
     },
     WindowUpdate(SizeIncrement),
-    Continuation(AROIobuf)
+    Continuation(AROIobuf),
+    Unregistered
 }
 
 impl Payload {
@@ -104,7 +105,8 @@ impl Payload {
                 },
             Raw::WindowUpdate(sz) => Payload::WindowUpdate(sz),
             Raw::Continuation(data) =>
-                Payload::Continuation(unsafe { convert_slice(buf, data) })
+                Payload::Continuation(unsafe { convert_slice(buf, data) }),
+            Raw::Unregistered => Payload::Unregistered
         }
     }
 }
@@ -118,7 +120,7 @@ unsafe fn convert_slice<'a>(buf: &AROIobuf, slice: &'a [u8]) -> AROIobuf {
     let end_offset = start_offset + (len as u32);
 
     let mut outbuf = buf.clone();
-    outbuf.sub_window(start_offset, end_offset);
+    outbuf.sub_window(start_offset, end_offset).unwrap();
     outbuf
 }
 
