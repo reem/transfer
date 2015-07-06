@@ -2,6 +2,7 @@
 ///
 /// Stream States are covered in detail in Section 5.1 of the spec, which also includes
 /// a nice diagram showing all of the possible state transitions.
+#[derive(Debug, Copy, Clone, PartialEq, Hash, Eq)]
 pub enum State {
     /// The "idle" state, as described in the spec:
     ///
@@ -161,5 +162,12 @@ pub enum State {
     /// Therefore, a RST_STREAM is needed to close an unwanted promisd stream.
     /// ```
     Closed
+}
+
+impl Default for State {
+    /// Idle is the default state.
+    fn default() -> Self {
+        State::Idle
+    }
 }
 
