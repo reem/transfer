@@ -67,6 +67,17 @@ pub enum Payload {
 }
 
 impl Payload {
+    /// Retrieve the Priority from this payload, if one is present.
+    ///
+    /// Only Headers and Priority frames can contain a Priority.
+    pub fn priority(&self) -> Option<Priority> {
+        match self {
+            Payload::Headers { ref priority, .. } => priority.clone(),
+            Payload::Priority(ref priority) => Some(priority.clone()),
+            _ => None
+        }
+    }
+
     fn convert(raw: ::http2parse::Payload, buf: &AROIobuf) -> Payload {
         use http2parse::Payload as Raw;
 
