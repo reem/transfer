@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use mio::{EventLoop, ReadHint, Token};
+use mio::{EventLoop, Token};
 use mio::tcp::TcpListener;
 
 use rt::loophandler::{LoopHandler, Registration};
@@ -28,7 +28,7 @@ impl Acceptor {
 
     pub fn readable(mut handler: &mut LoopHandler,
                     event_loop: &mut EventLoop<LoopHandler>,
-                    token: Token, hint: ReadHint) {
+                    token: Token) {
         let (connection, httphandler, metadata) = {
             if let &mut Registration::Acceptor(ref mut acceptor) = &mut handler.slab[token] {
                 (acceptor.listener.accept(),

@@ -71,7 +71,7 @@ impl Payload {
     ///
     /// Only Headers and Priority frames can contain a Priority.
     pub fn priority(&self) -> Option<Priority> {
-        match self {
+        match *self {
             Payload::Headers { ref priority, .. } => priority.clone(),
             Payload::Priority(ref priority) => Some(priority.clone()),
             _ => None

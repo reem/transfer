@@ -1,7 +1,7 @@
 use std::thunk::Thunk;
 
 use mio::util::Slab;
-use mio::{self, EventLoop, Token, ReadHint};
+use mio::{self, EventLoop, Token, EventSet};
 
 use rt::connection::Connection;
 use rt::acceptor::Acceptor;
@@ -38,33 +38,35 @@ impl mio::Handler for LoopHandler {
     type Message = Message;
     type Timeout = Thunk<'static>;
 
-    fn readable(&mut self, event_loop: &mut EventLoop<LoopHandler>,
-                token: Token, hint: ReadHint) {
-        // If a fildes was removed, ignore any hints.
-        if !self.slab.contains(token) { return }
-
-        match self.slab[token] {
-            Registration::Connection(_) =>
-                Connection::readable(self, event_loop, token, hint),
-            Registration::Acceptor(_) =>
-                Acceptor::readable(self, event_loop, token, hint)
+    fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token, events: EventSet) {
+        if events.is_readable() {
+            match self.slab[token] {
+                Registration::Connection(_) =>
+                    Connection::readable(self, event_loop, token),
+                Registration::Acceptor(_) =>
+                    Acceptor::readable(self, event_loop, token)
+            }
         }
-    }
 
-    fn writable(&mut self, event_loop: &mut EventLoop<LoopHandler>,
-                token: Token) {
-        // If a fildes was removed, ignore any hints.
-        if !self.slab.contains(token) { return }
+        if events.is_writable() {
+            let res = match self.slab[token] {
+                Registration::Connection(_) => true,
+                Registration::Acceptor(_) => false
+            };
 
-        let res = match self.slab[token] {
-            Registration::Connection(_) => true,
-            Registration::Acceptor(_) => false
-        };
+            if res {
+                Connection::writable(self, event_loop, token)
+            } else {
+                Acceptor::writable(self, event_loop, token)
+            }
+        }
 
-        if res {
-            Connection::writable(self, event_loop, token)
-        } else {
-            Acceptor::writable(self, event_loop, token)
+        if events.is_error() {
+
+        }
+
+        if events.is_hup() {
+
         }
     }
 
