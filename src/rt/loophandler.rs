@@ -38,26 +38,30 @@ impl mio::Handler for LoopHandler {
     type Message = Message;
     type Timeout = Thunk<'static>;
 
-    fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token, events: EventSet) {
+    fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token, mut events: EventSet) {
         if events.is_readable() {
+            events = events - EventSet::readable();
+
             match self.slab[token] {
                 Registration::Connection(_) =>
-                    Connection::readable(self, event_loop, token),
+                    Connection::readable(self, event_loop, token, is_empty(&events)),
                 Registration::Acceptor(_) =>
-                    Acceptor::readable(self, event_loop, token)
+                    Acceptor::readable(self, event_loop, token, is_empty(&events))
             }
         }
 
         if events.is_writable() {
+            events = events - EventSet::writable();
+
             let res = match self.slab[token] {
                 Registration::Connection(_) => true,
                 Registration::Acceptor(_) => false
             };
 
             if res {
-                Connection::writable(self, event_loop, token)
+                Connection::writable(self, event_loop, token, is_empty(&events))
             } else {
-                Acceptor::writable(self, event_loop, token)
+                Acceptor::writable(self, event_loop, token, is_empty(&events))
             }
         }
 
@@ -68,6 +72,9 @@ impl mio::Handler for LoopHandler {
         if events.is_hup() {
 
         }
+
+        #[inline(always)]
+        fn is_empty(e: &EventSet) -> bool { *e == EventSet::none() }
     }
 
     fn notify(&mut self, event_loop: &mut EventLoop<LoopHandler>,

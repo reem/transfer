@@ -28,7 +28,7 @@ impl Acceptor {
 
     pub fn readable(mut handler: &mut LoopHandler,
                     event_loop: &mut EventLoop<LoopHandler>,
-                    token: Token) {
+                    token: Token, is_last_handler: bool) {
         let (connection, httphandler, metadata) = {
             if let &mut Registration::Acceptor(ref mut acceptor) = &mut handler.slab[token] {
                 (acceptor.listener.accept(),
@@ -53,7 +53,8 @@ impl Acceptor {
     }
 
     pub fn writable(handler: &mut LoopHandler,
-                    event_loop: &mut EventLoop<LoopHandler>, token: Token) {
+                    event_loop: &mut EventLoop<LoopHandler>, token: Token,
+                    is_last_handler: bool) {
         unreachable!("Received writable hint on an acceptor.")
     }
 }
