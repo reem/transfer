@@ -63,7 +63,8 @@ impl InnerIoMachine<Connection> {
         loop {
             if let Some(current) = self.io.current {
                 let frame = Frame::parse(current,
-                                         self.io.buffer.slice().slice_from(9));
+                                         self.io.buffer.slice()
+                                             .slice_from(FRAME_HEADER_LENGTH));
 
                 match frame {
                     Err(parser::Error::Incomplete) => break,
@@ -78,7 +79,8 @@ impl InnerIoMachine<Connection> {
                         self.io.current = None;
 
                         let mut newbuffer = buf();
-                        newbuffer.fill(&self.io.buffer[current.length as usize..]);
+                        newbuffer.fill(
+                            &self.io.buffer[FRAME_HEADER_LENGTH + current.length as usize..]);
                         self.io.buffer = newbuffer;
                     }
                 }
