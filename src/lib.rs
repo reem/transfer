@@ -1,4 +1,4 @@
-#![feature(box_syntax, raw, unboxed_closures, fnbox)]
+#![feature(unboxed_closures, fnbox, result_expect)]
 #![cfg_attr(test, deny(warnings))]
 #![cfg_attr(test, feature(test))]
 #![allow(unused_variables)]
@@ -16,9 +16,6 @@ extern crate appendbuf;
 extern crate log;
 
 pub use eventual::{Future, Complete, Stream, Sender};
-
-#[macro_use(debug_unreachable)]
-extern crate debug_unreachable;
 
 pub use error::{Result, Error};
 

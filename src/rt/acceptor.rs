@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use mio::{EventLoop, Token, EventSet};
+use mio::{EventLoop, EventSet};
 use mio::tcp::TcpListener;
 
 use rt::loophandler::{LoopHandler, InnerIoMachine, EventMachine};

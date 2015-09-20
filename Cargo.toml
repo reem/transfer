@@ -10,8 +10,7 @@ license = "MIT"
 keywords = ["web"]
 
 [dependencies]
-http2parse = "*"
-debug_unreachable = "*"
+http2parse = "0.1"
 syncbox = "*"
 eventual = { git = "https://github.com/carllerche/eventual" }
 log = "0.3"

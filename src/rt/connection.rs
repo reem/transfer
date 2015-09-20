@@ -2,14 +2,14 @@ use std::sync::Arc;
 
 use mio::{EventLoop, EventSet, TryRead};
 use mio::tcp::TcpStream;
-use eventual::{Sender};
+use eventual::Sender;
 
 use appendbuf::AppendBuf;
 
 use rt::loophandler::{LoopHandler, InnerIoMachine, EventMachine};
-use rt::{Executor, Metadata};
+use rt::Metadata;
 
-use http::parser::{FrameHeader, Frame};
+use http::parser::{self, FrameHeader, Frame};
 use http;
 
 use prelude::*;
@@ -22,8 +22,7 @@ pub struct ReadEvidence;
 
 pub struct Connection {
     pub connection: TcpStream,
-    frames: Sender<Frame, Error>,
-    metadata: Metadata,
+    frames: Future<Sender<Frame, Error>, ()>,
     current: Option<FrameHeader>,
     buffer: AppendBuf
 }
@@ -60,8 +59,40 @@ impl InnerIoMachine<Connection> {
             }
         }
 
-        if let Some(current) = self.io.current {
+        // Parse as many frames as we can.
+        loop {
+            if let Some(current) = self.io.current {
+                let frame = Frame::parse(current,
+                                         self.io.buffer.slice().slice_from(9));
 
+                match frame {
+                    Err(parser::Error::Incomplete) => break,
+                    Err(_) => return None,
+                    Ok(frame) => {
+                        // Send the frame.
+                        self.io.frames = self.io.frames.and_then(|sender| {
+                            sender.send(frame)
+                        });
+
+                        // Recycle self.io.current and self.io.buffer.
+                        self.io.current = None;
+
+                        let mut newbuffer = buf();
+                        newbuffer.fill(&self.io.buffer[current.length as usize..]);
+                        self.io.buffer = newbuffer;
+                    }
+                }
+            } else {
+                let header = FrameHeader::parse(&self.io.buffer);
+
+                match header {
+                    Err(::http2parse::Error::Short) => break,
+                    Err(_) => return None,
+                    Ok(header) => {
+                        self.io.current = Some(header);
+                    }
+                }
+            }
         }
 
         Some(self)
@@ -73,23 +104,23 @@ impl InnerIoMachine<Connection> {
     }
 }
 
+fn buf() -> AppendBuf {
+    AppendBuf::new(FRAME_HEADER_LENGTH + FRAME_PAYLOAD_MAX_LENGTH)
+}
+
 impl Connection {
     pub fn new(connection: TcpStream,
                handler: Arc<Box<HttpHandler>>,
                metadata: Metadata) -> Connection {
-        let readbuffer =
-            AppendBuf::new(FRAME_HEADER_LENGTH + FRAME_PAYLOAD_MAX_LENGTH);
-
         let (frames_tx, frames_rx) = Stream::pair();
 
         http::http(frames_rx, metadata.clone());
 
         Connection {
             connection: connection,
-            frames: frames_tx,
-            metadata: metadata,
+            frames: Future::of(frames_tx),
             current: None,
-            buffer: readbuffer
+            buffer: buf()
         }
     }
 }

@@ -28,7 +28,8 @@ impl LoopHandler {
     where InnerIoMachine<E>: Into<IoMachine> {
         self.slab.insert_with(move |token| {
             let machine = InnerIoMachine { io: io, token: token };
-            event_loop.register(&machine.io, token, interest, PollOpt::edge());
+            event_loop.register(&machine.io, token, interest, PollOpt::edge())
+                .expect("Too many fds, cannot register more!");
             machine.into()
         }).unwrap()
     }
