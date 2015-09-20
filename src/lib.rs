@@ -1,4 +1,4 @@
-#![feature(box_syntax, raw, thunk)]
+#![feature(box_syntax, raw, unboxed_closures, fnbox)]
 #![cfg_attr(test, deny(warnings))]
 #![cfg_attr(test, feature(test))]
 #![allow(unused_variables)]
@@ -8,9 +8,12 @@
 
 extern crate mio;
 extern crate http2parse;
-extern crate iobuf;
 extern crate syncbox;
 extern crate eventual;
+extern crate appendbuf;
+
+#[macro_use]
+extern crate log;
 
 pub use eventual::{Future, Complete, Stream, Sender};
 
@@ -25,7 +28,6 @@ pub trait Handler: Send + Sync + 'static {
 
 pub mod prelude {
     pub use eventual::{Future, Stream, Join, Async, Select};
-    pub use iobuf::Iobuf;
     pub use {Result, Error, Handler};
 }
 

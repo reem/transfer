@@ -1,18 +1,44 @@
 use std::sync::Arc;
 
-use mio::{EventLoop, Token};
+use mio::{EventLoop, Token, EventSet};
 use mio::tcp::TcpListener;
 
-use rt::loophandler::{LoopHandler, Registration};
+use rt::loophandler::{LoopHandler, InnerIoMachine, EventMachine};
 use rt::connection::Connection;
 use rt::Metadata;
 
 use Handler as HttpHandler;
 
 pub struct Acceptor {
-    listener: TcpListener,
+    pub listener: TcpListener,
     handler: Arc<Box<HttpHandler>>,
     metadata: Metadata
+}
+
+impl EventMachine for InnerIoMachine<Acceptor> {
+    fn ready(self, event_loop: &mut EventLoop<LoopHandler>, handler: &mut LoopHandler,
+             events: EventSet) -> Option<Self> {
+        // Any other event is incorrect.
+        assert_eq!(events, EventSet::readable());
+
+        // Accept as many connections as possible.
+        loop {
+            let conn = match self.io.listener.accept() {
+                Ok(Some(conn)) => conn,
+                Ok(None) => break,
+                Err(e) => {
+                    error!("Acceptor error {:?}", e);
+                    return None
+                }
+            };
+
+            handler.register(
+                Connection::new(conn.0, self.io.handler.clone(), self.io.metadata.clone()),
+                event_loop, EventSet::readable() | EventSet::writable());
+        }
+
+        Some(self)
+    }
 }
 
 impl Acceptor {
@@ -24,38 +50,6 @@ impl Acceptor {
             handler: handler,
             metadata: metadata
         }
-    }
-
-    pub fn readable(mut handler: &mut LoopHandler,
-                    event_loop: &mut EventLoop<LoopHandler>,
-                    token: Token, is_last_handler: bool) {
-        let (connection, httphandler, metadata) = {
-            if let &mut Registration::Acceptor(ref mut acceptor) = &mut handler.slab[token] {
-                (acceptor.listener.accept(),
-                 acceptor.handler.clone(),
-                 acceptor.metadata.clone())
-            } else {
-                unreachable!("LoopHandler yielded connection to acceptor.")
-            }
-        };
-
-        match connection {
-            Ok(Some(connection)) => {
-                let conn = Connection::new(connection, httphandler, metadata);
-                handler.register(Registration::Connection(conn));
-            },
-
-            // Another thread beat us to accepting.
-            Ok(None) => { () }
-
-            Err(_) => { }
-        };
-    }
-
-    pub fn writable(handler: &mut LoopHandler,
-                    event_loop: &mut EventLoop<LoopHandler>, token: Token,
-                    is_last_handler: bool) {
-        unreachable!("Received writable hint on an acceptor.")
     }
 }
 

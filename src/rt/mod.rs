@@ -1,7 +1,7 @@
 use mio::{self, EventLoop, EventLoopConfig};
 use mio::tcp::TcpListener;
 
-use std::thunk::Thunk;
+use std::boxed::FnBox;
 use std::sync::Arc;
 use std::result::Result as StdResult;
 use std::fmt;
@@ -11,11 +11,12 @@ use rt::loophandler::LoopHandler;
 use prelude::*;
 use Handler as HttpHandler;
 
+pub type Thunk<'a, A = (), R = ()> = Box<FnBox<A, Output=R> + Send + 'a>;
+
 pub mod acceptor;
 pub mod connection;
 
 pub use rt::metadata::Metadata;
-pub use iobuf::Allocator;
 
 pub trait Executor: Send + Sync {
     fn execute(&self, Thunk<'static>);

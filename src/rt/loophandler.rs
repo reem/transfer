@@ -1,15 +1,18 @@
-use std::thunk::Thunk;
+use super::Thunk;
 
 use mio::util::Slab;
-use mio::{self, EventLoop, Token, EventSet};
+use mio::{self, EventLoop, Token, EventSet, Evented, PollOpt};
 
 use rt::connection::Connection;
 use rt::acceptor::Acceptor;
 use rt::{Message, Metadata};
 
+use std::os::unix::io::AsRawFd;
+use std::{io, mem};
+
 pub struct LoopHandler {
     pub metadata: Metadata,
-    pub slab: Slab<Registration>
+    pub slab: Slab<IoMachine>,
 }
 
 impl LoopHandler {
@@ -20,18 +23,95 @@ impl LoopHandler {
         }
     }
 
-    pub fn register(&mut self, registration: Registration) {
-        // TODO: Fill in registration.
-        match registration {
-            Registration::Connection(conn) => { },
-            Registration::Acceptor(acceptor) => { }
+    pub fn register<E: Evented>(&mut self, io: E, event_loop: &mut EventLoop<Self>,
+                                interest: EventSet) -> Token
+    where InnerIoMachine<E>: Into<IoMachine> {
+        self.slab.insert_with(move |token| {
+            let machine = InnerIoMachine { io: io, token: token };
+            event_loop.register(&machine.io, token, interest, PollOpt::edge());
+            machine.into()
+        }).unwrap()
+    }
+}
+
+pub trait EventMachine: Sized {
+    fn ready(self, _: &mut EventLoop<LoopHandler>, _: &mut LoopHandler,
+             _: EventSet) -> Option<Self> {
+        Some(self)
+    }
+}
+
+pub enum IoMachine {
+    Connection(InnerIoMachine<Connection>),
+    Acceptor(InnerIoMachine<Acceptor>),
+    Active // The active IoMachine appears in the slab as Active
+}
+
+impl EventMachine for IoMachine {
+    fn ready(self, event_loop: &mut EventLoop<LoopHandler>, handler: &mut LoopHandler,
+             events: EventSet) -> Option<Self> {
+        match self {
+            IoMachine::Connection(machine) =>
+                machine.ready(event_loop, handler, events).map(Into::into),
+            IoMachine::Acceptor(machine) =>
+                machine.ready(event_loop, handler, events).map(Into::into),
+            IoMachine::Active =>
+                panic!("Recursive readiness! IoMachine::ready called on Active.")
         }
     }
 }
 
-pub enum Registration {
-    Connection(Connection),
-    Acceptor(Acceptor),
+pub struct InnerIoMachine<I> {
+    pub io: I,
+    pub token: Token
+}
+
+impl Into<IoMachine> for InnerIoMachine<Connection> {
+     fn into(self) -> IoMachine { IoMachine::Connection(self) }
+}
+
+impl Into<IoMachine> for InnerIoMachine<Acceptor> {
+     fn into(self) -> IoMachine { IoMachine::Acceptor(self) }
+}
+
+fn with_io<I, F, T>(io_obj: &I, cb: F) -> T
+where I: AsRawFd, F: FnOnce(&mio::Io) -> T {
+    let io = mio::Io::from_raw_fd(io_obj.as_raw_fd());
+    let val = cb(&io);
+    mem::forget(io);
+    val
+}
+
+impl mio::Evented for Connection {
+     fn register(&self, selector: &mut mio::Selector, token: mio::Token,
+                 interest: mio::EventSet, opts: mio::PollOpt) -> io::Result<()> {
+         with_io(&self.connection, move |io| io.register(selector, token, interest, opts))
+     }
+
+     fn reregister(&self, selector: &mut mio::Selector, token: mio::Token,
+                   interest: mio::EventSet, opts: mio::PollOpt) -> io::Result<()> {
+         with_io(&self.connection, move |io| io.reregister(selector, token, interest, opts))
+     }
+
+     fn deregister(&self, selector: &mut mio::Selector) -> io::Result<()> {
+         with_io(&self.connection, move |io| io.deregister(selector))
+     }
+}
+
+impl mio::Evented for Acceptor {
+     fn register(&self, selector: &mut mio::Selector, token: mio::Token,
+                 interest: mio::EventSet, opts: mio::PollOpt) -> io::Result<()> {
+         with_io(&self.listener, move |io| io.register(selector, token, interest, opts))
+     }
+
+     fn reregister(&self, selector: &mut mio::Selector, token: mio::Token,
+                   interest: mio::EventSet, opts: mio::PollOpt) -> io::Result<()> {
+         with_io(&self.listener, move |io| io.reregister(selector, token, interest, opts))
+     }
+
+     fn deregister(&self, selector: &mut mio::Selector) -> io::Result<()> {
+         with_io(&self.listener, move |io| io.deregister(selector))
+     }
 }
 
 impl mio::Handler for LoopHandler {
@@ -42,39 +122,14 @@ impl mio::Handler for LoopHandler {
         if events.is_readable() {
             events = events - EventSet::readable();
 
-            match self.slab[token] {
-                Registration::Connection(_) =>
-                    Connection::readable(self, event_loop, token, is_empty(&events)),
-                Registration::Acceptor(_) =>
-                    Acceptor::readable(self, event_loop, token, is_empty(&events))
-            }
-        }
+            let new_machine = self.slab.replace(token, IoMachine::Active)
+                .and_then(|machine| { machine.ready(event_loop, self, events) });
 
-        if events.is_writable() {
-            events = events - EventSet::writable();
-
-            let res = match self.slab[token] {
-                Registration::Connection(_) => true,
-                Registration::Acceptor(_) => false
+            match new_machine {
+                Some(machine) => self.slab.replace(token, machine),
+                None => self.slab.remove(token)
             };
-
-            if res {
-                Connection::writable(self, event_loop, token, is_empty(&events))
-            } else {
-                Acceptor::writable(self, event_loop, token, is_empty(&events))
-            }
         }
-
-        if events.is_error() {
-
-        }
-
-        if events.is_hup() {
-
-        }
-
-        #[inline(always)]
-        fn is_empty(e: &EventSet) -> bool { *e == EventSet::none() }
     }
 
     fn notify(&mut self, event_loop: &mut EventLoop<LoopHandler>,
@@ -83,11 +138,8 @@ impl mio::Handler for LoopHandler {
             Message::NextTick(thunk) => thunk(),
             Message::Listener(listener, handler) => {
                 let metadata = self.metadata.clone();
-                self.register(
-                    Registration::Acceptor(
-                        Acceptor::new(listener, handler, metadata)
-                    )
-                )
+                self.register(Acceptor::new(listener, handler, metadata), event_loop,
+                              EventSet::readable());
             },
             Message::Shutdown => event_loop.shutdown(),
             Message::Timeout(thunk, ms) => { let _ = event_loop.timeout_ms(thunk, ms); }

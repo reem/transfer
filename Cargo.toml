@@ -12,8 +12,9 @@ keywords = ["web"]
 [dependencies]
 http2parse = "*"
 debug_unreachable = "*"
-iobuf = { git = "https://github.com/reem/iobuf", branch = "nightly-rustup" }
 syncbox = "*"
 eventual = { git = "https://github.com/carllerche/eventual" }
+log = "0.3"
+appendbuf = "0.1"
 mio = { git = "https://github.com/carllerche/mio" }
 

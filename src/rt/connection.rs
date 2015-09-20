@@ -1,81 +1,96 @@
 use std::sync::Arc;
-use std::collections::HashMap;
-use std::io::{self, Read, Write};
 
-use mio::{EventLoop, Token};
+use mio::{EventLoop, EventSet, TryRead};
 use mio::tcp::TcpStream;
-use iobuf::{AROIobuf, AppendBuf};
-use eventual::{Sender, BusySender};
+use eventual::{Sender};
 
-use rt::loophandler::{LoopHandler, Registration};
+use appendbuf::AppendBuf;
+
+use rt::loophandler::{LoopHandler, InnerIoMachine, EventMachine};
 use rt::{Executor, Metadata};
 
-use http::parser::{FrameHeader, StreamIdentifier};
+use http::parser::{FrameHeader, Frame};
+use http;
 
 use prelude::*;
 use Handler as HttpHandler;
 
+const FRAME_PAYLOAD_MAX_LENGTH: usize = 1024 * 16;
+const FRAME_HEADER_LENGTH: usize = 9;
+
 pub struct ReadEvidence;
 
 pub struct Connection {
-    connection: TcpStream,
-    streams: HashMap<StreamIdentifier, ::http::Stream>,
+    pub connection: TcpStream,
+    frames: Sender<Frame, Error>,
     metadata: Metadata,
-    waiting: Option<FrameHeader>,
-    buffer: AppendBuf<'static>
+    current: Option<FrameHeader>,
+    buffer: AppendBuf
+}
+
+impl EventMachine for InnerIoMachine<Connection> {
+    fn ready(self, event_loop: &mut EventLoop<LoopHandler>, handler: &mut LoopHandler,
+             events: EventSet) -> Option<Self> {
+        let mut optself = Some(self);
+
+        if events.contains(EventSet::readable()) {
+            optself = optself.and_then(|this| this.readable(event_loop, handler))
+        }
+
+        if events.contains(EventSet::writable()) {
+            optself = optself.and_then(|this| this.writable(event_loop, handler))
+        }
+
+        optself
+    }
+}
+
+impl InnerIoMachine<Connection> {
+    fn readable(mut self, event_loop: &mut EventLoop<LoopHandler>,
+                handler: &mut LoopHandler) -> Option<Self> {
+        // Read in as much data as we can.
+        loop {
+            match self.io.connection.try_read(self.io.buffer.get_write_buf()) {
+                Ok(Some(n)) => unsafe { self.io.buffer.advance(n) },
+                Ok(None) => break,
+                Err(e) => {
+                    error!("Connection error {:?}", e);
+                    return None
+                }
+            }
+        }
+
+        if let Some(current) = self.io.current {
+
+        }
+
+        Some(self)
+    }
+
+    fn writable(self, event_loop: &mut EventLoop<LoopHandler>,
+                handler: &mut LoopHandler) -> Option<Self> {
+        Some(self)
+    }
 }
 
 impl Connection {
     pub fn new(connection: TcpStream,
                handler: Arc<Box<HttpHandler>>,
                metadata: Metadata) -> Connection {
-        let readbuffer = AppendBuf::new_with_allocator(9, metadata.allocator.clone());
+        let readbuffer =
+            AppendBuf::new(FRAME_HEADER_LENGTH + FRAME_PAYLOAD_MAX_LENGTH);
+
+        let (frames_tx, frames_rx) = Stream::pair();
+
+        http::http(frames_rx, metadata.clone());
 
         Connection {
             connection: connection,
-            streams: HashMap::new(),
+            frames: frames_tx,
             metadata: metadata,
-            waiting: None,
+            current: None,
             buffer: readbuffer
         }
     }
-
-    pub fn readable(handler: &mut LoopHandler,
-                    event_loop: &mut EventLoop<LoopHandler>,
-                    token: Token, last_event: bool) {
-        use std::io::ErrorKind;
-
-        if let &mut Registration::Connection(ref mut connection) = &mut handler.slab[token] {
-            loop {
-                let remove = match connection.waiting {
-                    Some(header) => {
-                        match connection.connection.read(unsafe { connection.buffer.as_mut_window_slice() }) {
-                            Ok(0) => last_event,
-                            Ok(n) => {
-                                false
-                            },
-                            Err(e) => {
-                                if e.kind() == ErrorKind::WouldBlock {
-                                    false
-                                } else {
-                                    true
-                                }
-                            },
-                        }
-                    },
-                    None => {
-                        false
-                    }
-                };
-            }
-        } else {
-            unreachable!("LoopHandler yielded acceptor to connection.");
-        }
-    }
-
-    pub fn writable(handler: &mut LoopHandler,
-                    event_loop: &mut EventLoop<LoopHandler>,
-                    token: Token, last_event: bool) {
-
-    }
 }
+

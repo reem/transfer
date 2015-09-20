@@ -1,8 +1,8 @@
-use iobuf::{AROIobuf, RWIobuf};
+use appendbuf::{AppendBuf, Slice};
 
 use std::{raw, slice, mem};
 
-use util::TypedAROIobuf;
+use util::TypedSlice;
 use prelude::*;
 
 pub use http2parse::{
@@ -17,10 +17,9 @@ pub struct Frame {
 }
 
 impl Frame {
-    pub fn parse(header: FrameHeader, buf: AROIobuf,
+    pub fn parse(header: FrameHeader, buf: Slice,
                  settings: ParserSettings) -> Result<Frame> {
-        let bytes = unsafe { buf.as_window_slice() };
-        let raw = try!(::http2parse::Frame::parse(header, bytes, settings));
+        let raw = try!(::http2parse::Frame::parse(header, &buf, settings));
 
         Ok(Frame {
             header: raw.header,
@@ -43,26 +42,26 @@ impl From<::http2parse::Error> for Error {
 pub type Result<T> = ::std::result::Result<T, Error>;
 
 pub enum Payload {
-    Data(AROIobuf),
+    Data(Slice),
     Headers {
         priority: Option<Priority>,
-        block: AROIobuf
+        block: Slice
     },
     Priority(Priority),
     Reset(ErrorCode),
-    Settings(TypedAROIobuf<Setting>),
+    Settings(TypedSlice<Setting>),
     PushPromise {
         promised: StreamIdentifier,
-        block: AROIobuf
+        block: Slice
     },
     Ping(u64),
     GoAway {
         last: StreamIdentifier,
         error: ErrorCode,
-        data: AROIobuf
+        data: Slice
     },
     WindowUpdate(SizeIncrement),
-    Continuation(AROIobuf),
+    Continuation(Slice),
     Unregistered
 }
 
@@ -78,7 +77,7 @@ impl Payload {
         }
     }
 
-    fn convert(raw: ::http2parse::Payload, buf: &AROIobuf) -> Payload {
+    fn convert(raw: ::http2parse::Payload, buf: &Slice) -> Payload {
         use http2parse::Payload as Raw;
 
         match raw {
@@ -99,7 +98,7 @@ impl Payload {
                 };
 
                 Payload::Settings(unsafe {
-                    TypedAROIobuf::new(convert_slice(buf, settings_buf))
+                    TypedSlice::new(convert_slice(buf, settings_buf))
                 })
             },
             Raw::PushPromise { promised, block } =>
@@ -122,17 +121,15 @@ impl Payload {
     }
 }
 
-/// Convert a slice from a given AROIobuf into an AROIobuf over the same region.
-unsafe fn convert_slice<'a>(buf: &AROIobuf, slice: &'a [u8]) -> AROIobuf {
-    let bufstart = buf.as_window_slice().as_ptr() as u32;
-    let raw::Slice { data, len } = mem::transmute::<&[u8], raw::Slice<u8>>(slice);
+/// Convert a slice from a given Slice into an Slice over the same region.
+unsafe fn convert_slice<'a>(buf: &Slice, slice: &'a [u8]) -> Slice {
+    let bufstart = buf.as_ptr() as usize;
+    let slice_start = slice.as_ptr() as usize;
 
-    let start_offset = (data as u32) - bufstart;
-    let end_offset = start_offset + (len as u32);
+    let start_offset = slice_start - bufstart;
+    let end_offset = start_offset + slice.len();
 
-    let mut outbuf = buf.clone();
-    outbuf.sub_window(start_offset, end_offset).unwrap();
-    outbuf
+    buf.slice(start_offset, end_offset)
 }
 
 #[cfg(test)]
@@ -140,18 +137,20 @@ mod tests {
     use prelude::*;
     use super::convert_slice;
 
-    use iobuf::{AROIobuf, RWIobuf};
+    use appendbuf::{AppendBuf, Slice};
 
-    fn aroiobuf(buf: &str) -> AROIobuf {
-        RWIobuf::from_str_copy(buf).atomic_read_only().ok().unwrap()
+    fn slice(buf: &str) -> Slice {
+        let mut outbuf = AppendBuf::new(buf.len());
+        outbuf.fill(buf.as_bytes());
+        outbuf.slice()
     }
 
     #[test]
-    fn test_slice_to_buf() {
-        let abuf = aroiobuf("hello world");
-        let slice = &unsafe { abuf.as_window_slice() }[3..];
-        let converted = convert_slice(abuf, slice);
-        assert_eq!(b"llo world", unsafe { converted.as_window_slice() });
+    fn test_convert_slice() {
+        let buf = slice("hello world");
+        let slice = &buf[2..];
+        let converted = unsafe { convert_slice(&buf, slice) };
+        assert_eq!(b"llo world", &*converted);
     }
 }
 
