@@ -1,7 +1,8 @@
 use http::parser::{StreamIdentifier, Frame, Payload};
-use prelude::*;
 
 use self::state::State;
+use super::Http2;
+use super::error::Result;
 
 mod state;
 
@@ -27,20 +28,19 @@ pub struct Stream {
 }
 
 impl Stream {
-    /// Transition this stream to another state based on the frame.
-    ///
-    /// Prioritization is ignored at this level, and should be handled
-    /// separately.
-    pub fn transition_with_frame(&mut self, frame: Frame) -> Result<()> {
-        Ok(match (self.state, frame) {
-            (State::Idle, Frame { header, payload: Payload::Headers { priority, block }}) => {
+    pub fn new(id: StreamIdentifier) -> Stream {
+        Stream {
+            id: id,
+            state: State::default()
+        }
+    }
 
-            },
-            (State::Idle, Frame { header, payload: Payload::PushPromise { promised, block }}) => {
-
-            },
-            (_, _) => {}
-        })
+    pub fn apply(self, streams: &mut Http2, frame: Frame) -> Result<Self> {
+        match (self.state, frame) {
+            (state, frame) => {
+                Ok(self)
+            }
+        }
     }
 }
 

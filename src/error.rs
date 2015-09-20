@@ -12,6 +12,7 @@ pub enum Error {
     NotifyQueueFull(::rt::Message),
     NotifyQueueClosed,
     Async(AsyncError<()>),
+    Http(::http::Error),
     Executor
 }
 
@@ -19,7 +20,7 @@ impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Error::Io(ref io) =>
-                write!(fmt, "Transfer Error: {}", io),
+                write!(fmt, "Transfer Io Error: {}", io),
             Error::NotifyQueueFull(_) =>
                 fmt.write_str("Transfer Error: Notify Queue Full"),
             Error::Async(ref async) =>
@@ -32,7 +33,9 @@ impl fmt::Display for Error {
             Error::Executor =>
                 fmt.write_str("Transfer Error: Executor Error."),
             Error::NotifyQueueClosed =>
-                fmt.write_str("Transfer Error: Notify Queue is Closed")
+                fmt.write_str("Transfer Error: Notify Queue is Closed"),
+            Error::Http(ref http) =>
+                write!(fmt, "Transfer Http Error: {}", http)
         }
     }
 }
@@ -48,7 +51,8 @@ impl StdError for Error {
             Error::NotifyQueueFull(_) => None,
             Error::Async(_) => None, // TODO: File in syncbox to implement Error
             Error::Executor => None,
-            Error::NotifyQueueClosed => None
+            Error::NotifyQueueClosed => None,
+            Error::Http(ref http) => Some(http)
         }
     }
 }
@@ -72,6 +76,12 @@ impl From<NotifyError<::rt::Message>> for Error {
 impl From<AsyncError<()>> for Error {
     fn from(err: AsyncError<()>) -> Error {
         Error::Async(err)
+    }
+}
+
+impl From<::http::Error> for Error {
+    fn from(err: ::http::Error) -> Error {
+        Error::Http(err)
     }
 }
 

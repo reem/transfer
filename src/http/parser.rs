@@ -1,14 +1,13 @@
-use appendbuf::{AppendBuf, Slice};
+use appendbuf::Slice;
 
-use std::{raw, slice, mem};
+use std::{slice, mem};
 
 use util::TypedSlice;
-use prelude::*;
 
 pub use http2parse::{
     FrameHeader, Priority, SizeIncrement,
     ErrorCode, Setting, StreamIdentifier,
-    ParserSettings
+    Flag, Kind
 };
 
 pub struct Frame {
@@ -17,9 +16,8 @@ pub struct Frame {
 }
 
 impl Frame {
-    pub fn parse(header: FrameHeader, buf: Slice,
-                 settings: ParserSettings) -> Result<Frame> {
-        let raw = try!(::http2parse::Frame::parse(header, &buf, settings));
+    pub fn parse(header: FrameHeader, buf: Slice) -> Result<Frame> {
+        let raw = try!(::http2parse::Frame::parse(header, &buf));
 
         Ok(Frame {
             header: raw.header,
