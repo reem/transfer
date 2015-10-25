@@ -9,11 +9,20 @@ readme = "README.md"
 license = "MIT"
 keywords = ["web"]
 
+[features]
+random = ["http2parse/random"]
+
 [dependencies]
-http2parse = "0.1"
+http2parse = "0.2"
 syncbox = "*"
 eventual = { git = "https://github.com/carllerche/eventual" }
 log = "0.3"
-appendbuf = "0.1"
 mio = { git = "https://github.com/carllerche/mio" }
+
+[dependencies.appendbuf]
+version = "0.1"
+
+[dev-dependencies]
+env_logger = "0"
+rand = "0.3"
 
