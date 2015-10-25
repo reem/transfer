@@ -1,11 +1,26 @@
 use std::marker::PhantomData;
-use std::{mem, slice, ops};
+use std::{mem, slice, ops, fmt};
 
 use appendbuf::Slice;
 
 pub struct TypedSlice<T> {
     buf: Slice,
     _phantom: PhantomData<Vec<T>>
+}
+
+impl<T: Copy> Clone for TypedSlice<T> {
+    fn clone(&self) -> TypedSlice<T> {
+        TypedSlice {
+            buf: self.buf.clone(),
+            _phantom: PhantomData
+        }
+    }
+}
+
+impl<T: fmt::Debug> fmt::Debug for TypedSlice<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&**self, f)
+    }
 }
 
 impl<T> TypedSlice<T> {

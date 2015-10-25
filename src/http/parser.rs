@@ -10,6 +10,7 @@ pub use http2parse::{
     Flag, Kind
 };
 
+#[derive(Debug, Clone)]
 pub struct Frame {
     pub header: FrameHeader,
     pub payload: Payload
@@ -26,6 +27,7 @@ impl Frame {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum Error {
     Parse(::http2parse::Error),
     Incomplete
@@ -33,12 +35,16 @@ pub enum Error {
 
 impl From<::http2parse::Error> for Error {
     fn from(err: ::http2parse::Error) -> Error {
-        Error::Parse(err)
+        match err {
+            ::http2parse::Error::Short => Error::Incomplete,
+            e => Error::Parse(e)
+        }
     }
 }
 
 pub type Result<T> = ::std::result::Result<T, Error>;
 
+#[derive(Debug, Clone)]
 pub enum Payload {
     Data(Slice),
     Headers {
@@ -114,7 +120,7 @@ impl Payload {
             Raw::WindowUpdate(sz) => Payload::WindowUpdate(sz),
             Raw::Continuation(data) =>
                 Payload::Continuation(unsafe { convert_slice(buf, data) }),
-            Raw::Unregistered => Payload::Unregistered
+            Raw::Unregistered(_) => Payload::Unregistered
         }
     }
 }

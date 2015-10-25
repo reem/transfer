@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::fmt;
 
 use mio::{EventLoop, EventSet};
 use mio::tcp::TcpListener;
@@ -13,6 +14,12 @@ pub struct Acceptor {
     pub listener: TcpListener,
     handler: Arc<Box<HttpHandler>>,
     metadata: Metadata
+}
+
+impl fmt::Debug for Acceptor {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("transfer::rt::Acceptor")
+    }
 }
 
 impl EventMachine for InnerIoMachine<Acceptor> {
