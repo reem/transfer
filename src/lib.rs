@@ -1,5 +1,5 @@
-#![feature(unboxed_closures, fnbox, result_expect)]
-#![cfg_attr(test, deny(warnings))]
+#![feature(unboxed_closures, fnbox)]
+// #![cfg_attr(test, deny(warnings))]
 #![cfg_attr(test, feature(test))]
 #![allow(unused_variables)]
 // #![deny(missing_docs)]

@@ -70,6 +70,10 @@ impl Handle {
         Ok(self.shutdown)
     }
 
+    pub fn await(self) -> Result<()> {
+        Ok(self.shutdown.await().unwrap())
+    }
+
     fn send(&self, message: Message) -> Result<()> {
         Ok(try!(self.channel.send(message)))
     }
@@ -87,9 +91,13 @@ pub fn start(config: EventLoopConfig, metadata: Metadata) -> Result<Handle> {
         let (tx, rx) = Future::pair();
 
         local_executor.execute(Box::new(move || {
+            debug!("Running event loop.");
             match eloop.run(&mut handler).map_err(From::from) {
                 Ok(()) => tx.complete(()),
-                Err(e) => tx.fail(e)
+                Err(e) => {
+                    debug!("Error in event loop: {:?}", e);
+                    tx.fail(e)
+                }
             }
         }));
 

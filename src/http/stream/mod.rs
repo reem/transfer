@@ -2,7 +2,7 @@ use http::parser::{StreamIdentifier, Frame, Payload};
 
 use self::state::State;
 use super::Http2;
-use super::error::Result;
+use super::error::{Error, Result};
 
 mod state;
 
@@ -36,9 +36,52 @@ impl Stream {
     }
 
     pub fn apply(self, streams: &mut Http2, frame: Frame) -> Result<Self> {
-        match (self.state, frame) {
-            (state, frame) => {
+        let header = frame.header;
+        let payload = frame.payload;
+
+        // FIXME: remove
+        return Ok(self);
+
+        match (self.state, payload) {
+            (State::Idle, Payload::Headers { priority, block }) => {
                 Ok(self)
+            },
+
+            (State::ReservedLocal, Payload::Reset(error)) => {
+                Ok(self)
+            },
+
+            (State::ReservedRemote, Payload::Headers { priority, block }) => {
+                Ok(self)
+            },
+
+            (State::ReservedRemote, Payload::Reset(error)) => {
+                Ok(self)
+            },
+
+            (State::Open, Payload::Headers { priority, block }) => {
+                Ok(self)
+            },
+
+            (State::Open, Payload::Data(data)) => {
+                Ok(self)
+            },
+
+            (State::Open, Payload::Reset(error)) => {
+                Ok(self)
+            },
+
+            (State::HalfClosedLocal, Payload::Reset(error)) => {
+                Ok(self)
+            },
+
+            (_, Payload::Priority(priority)) => {
+                Ok(self)
+            },
+
+            // Illegal state/frame combo.
+            (state, frame) => {
+                Err(Error::InvalidFrameTypeForStreamState)
             }
         }
     }
