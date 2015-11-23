@@ -18,6 +18,7 @@ syncbox = "*"
 eventual = { git = "https://github.com/carllerche/eventual" }
 log = "0.3"
 mio = { git = "https://github.com/carllerche/mio" }
+byteorder = "0.4"
 
 [dependencies.appendbuf]
 version = "0.1"

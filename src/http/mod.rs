@@ -4,6 +4,7 @@ pub use self::error::{Error, Result};
 pub mod parser;
 pub mod stream;
 pub mod error;
+pub mod encoder;
 
 use self::parser::{Frame, StreamIdentifier};
 

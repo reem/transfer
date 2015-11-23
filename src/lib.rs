@@ -11,6 +11,7 @@ extern crate http2parse;
 extern crate syncbox;
 extern crate eventual;
 extern crate appendbuf;
+extern crate byteorder;
 
 #[macro_use]
 extern crate log;

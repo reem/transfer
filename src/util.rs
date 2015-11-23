@@ -30,6 +30,8 @@ impl<T> TypedSlice<T> {
             _phantom: PhantomData
         }
     }
+
+    pub fn into_slice(self) -> Slice { self.buf }
 }
 
 impl<T> AsRef<[T]> for TypedSlice<T> {
