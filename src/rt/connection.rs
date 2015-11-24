@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::io::ErrorKind;
 
 use mio::{EventLoop, EventSet, TryRead};
 use mio::tcp::TcpStream;
@@ -9,6 +10,7 @@ use rt::loophandler::{LoopHandler, InnerIoMachine, EventMachine};
 use rt::Metadata;
 
 use http::parser::{self, FrameHeader, Frame};
+use http::encoder::{FrameEncoder, Encoder};
 use http;
 
 use prelude::*;
@@ -22,7 +24,22 @@ pub struct Connection {
     pub connection: TcpStream,
     http2: http::Http2,
     current: Option<FrameHeader>,
-    buffer: AppendBuf
+    buffer: AppendBuf,
+    outgoing: Option<(FrameEncoder, http::WriteCallback)>
+}
+
+impl Connection {
+    pub fn new(connection: TcpStream,
+               handler: Arc<Box<HttpHandler>>,
+               metadata: Metadata) -> Connection {
+        Connection {
+            connection: connection,
+            http2: http::Http2::new(),
+            current: None,
+            buffer: buf(),
+            outgoing: None
+        }
+    }
 }
 
 impl EventMachine for InnerIoMachine<Connection> {
@@ -130,33 +147,61 @@ impl InnerIoMachine<Connection> {
                     return self.parse_frames()
                 },
                 Err(e) => {
-                    error!("Connection error {:?}", e);
+                    error!("Connection read error {:?}", e);
+                    handler.deregister(&self, event_loop);
                     return None
                 }
             }
         }
     }
 
-    fn writable(self, event_loop: &mut EventLoop<LoopHandler>,
+    fn writable(mut self, event_loop: &mut EventLoop<LoopHandler>,
                 handler: &mut LoopHandler) -> Option<Self> {
-        Some(self)
+        'writable: loop {
+            if let Some((mut encoder, cb)) = self.io.outgoing.take() {
+                debug!("Popped frame encoder from outgoing.");
+                trace!("FrameEncoder: {:?}", encoder);
+
+                'encoder: loop {
+                    match encoder.encode(&mut self.io.connection) {
+                        Some(Ok(n)) => {
+                            debug!("Write {} bytes from frame.", n);
+                            continue 'encoder;
+                        },
+                        Some(Err(ref e)) if e.kind() == ErrorKind::WouldBlock => {
+                            debug!("Write would block, yielding.");
+                            self.io.outgoing = Some((encoder, cb));
+                            return Some(self);
+                        }
+                        Some(Err(e)) => {
+                            error!("Connection write error {:?}", e);
+                            handler.deregister(&self, event_loop);
+                            return None;
+                        },
+                        None => {
+                            debug!("Finished writing frame encoder.");
+                            cb.0.call_box(&mut self.io.http2);
+                            break 'encoder;
+                        }
+                    }
+                }
+            } else {
+                match self.io.http2.get_next_encoder() {
+                    Some(e) => {
+                        debug!("Pulling next encoder.");
+                        self.io.outgoing = Some(e);
+                    }
+                    None => {
+                        debug!("No encoders available, yielding writable.");
+                        return Some(self)
+                    }
+                }
+            }
+        }
     }
 }
 
 fn buf() -> AppendBuf {
     AppendBuf::new(FRAME_HEADER_LENGTH + FRAME_PAYLOAD_MAX_LENGTH)
-}
-
-impl Connection {
-    pub fn new(connection: TcpStream,
-               handler: Arc<Box<HttpHandler>>,
-               metadata: Metadata) -> Connection {
-        Connection {
-            connection: connection,
-            http2: http::Http2::new(),
-            current: None,
-            buffer: buf()
-        }
-    }
 }
 

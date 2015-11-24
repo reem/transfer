@@ -18,6 +18,7 @@ where F: FnOnce(usize) -> Option<io::Result<usize>> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct FrameEncoder {
     header: FrameHeaderEncoder,
     payload: PayloadEncoder
@@ -42,6 +43,7 @@ impl Encoder for FrameEncoder {
     }
 }
 
+#[derive(Debug, Clone)]
 enum PayloadEncoder {
     Data(SliceEncoder),
     Headers {
@@ -128,6 +130,7 @@ impl Encoder for PayloadEncoder {
     }
 }
 
+#[derive(Debug, Clone)]
 struct SliceEncoder {
     slice: Slice,
     position: usize
@@ -218,6 +221,7 @@ impl PriorityEncoder {
 
 macro_rules! small_buffer_encoder {
     ($name:ident, $buffer_size:expr) => {
+        #[derive(Debug, Clone)]
         struct $name {
             buffer: [u8; $buffer_size],
             position: u8
