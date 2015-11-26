@@ -1,4 +1,4 @@
-use appendbuf::Slice;
+use appendbuf::{AppendBuf, Slice};
 
 use std::{slice, mem};
 
@@ -17,6 +17,20 @@ pub struct Frame {
 }
 
 impl Frame {
+    /// Convert a raw http2parse Frame into a transfer Frame by copying.
+    ///
+    /// The data within the frame is encoded then re-parsed into the new
+    /// representation. This constructor is mostly for testing, and should
+    /// not be used in performance-sensitive code.
+    pub fn clone_from(frame: ::http2parse::Frame) -> Frame {
+        let mut buf = AppendBuf::new(frame.encoded_len());
+
+        frame.encode(buf.get_write_buf());
+        unsafe { buf.advance(frame.encoded_len()); }
+
+        Frame::parse(frame.header, buf.slice().slice_from(9)).unwrap()
+    }
+
     pub fn parse(header: FrameHeader, buf: Slice) -> Result<Frame> {
         let raw = try!(::http2parse::Frame::parse(header, &buf));
 
@@ -66,7 +80,7 @@ pub enum Payload {
     },
     WindowUpdate(SizeIncrement),
     Continuation(Slice),
-    Unregistered
+    Unregistered(Slice)
 }
 
 impl Payload {
@@ -120,7 +134,8 @@ impl Payload {
             Raw::WindowUpdate(sz) => Payload::WindowUpdate(sz),
             Raw::Continuation(data) =>
                 Payload::Continuation(unsafe { convert_slice(buf, data) }),
-            Raw::Unregistered(_) => Payload::Unregistered
+            Raw::Unregistered(block) =>
+                Payload::Unregistered(unsafe { convert_slice(buf, block) })
         }
     }
 }
@@ -152,9 +167,9 @@ mod tests {
     #[test]
     fn test_convert_slice() {
         let buf = slice("hello world");
-        let slice = &buf[2..];
+        let slice = &buf[2..4];
         let converted = unsafe { convert_slice(&buf, slice) };
-        assert_eq!(b"llo world", &*converted);
+        assert_eq!(b"ll", &*converted);
     }
 }
 

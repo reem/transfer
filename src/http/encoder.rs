@@ -4,19 +4,29 @@ use http::parser::{Frame, Priority, Payload, FrameHeader};
 use std::io;
 
 pub trait Encoder {
-    fn encode<W: io::Write>(&mut self, write: &mut W) -> Option<io::Result<usize>>;
+    fn encode<W: io::Write>(&mut self, write: &mut W) -> EncodeResult;
 }
 
-/// Combinator for composing encoders.
-fn try<F>(result: Option<io::Result<usize>>, cb: F, default: usize) -> Option<io::Result<usize>>
-where F: FnOnce(usize) -> Option<io::Result<usize>> {
-    match result {
-        Some(Ok(0)) => Some(Ok(0)),
-        Some(Ok(n)) => cb(n),
-        None => cb(default),
-        e => e
+#[derive(Debug)]
+pub enum EncodeResult {
+    Wrote(usize),
+    Finished,
+    WouldBlock(usize),
+    Eof,
+    Error(io::Error)
+}
+
+macro_rules! try_encode {
+    ($e:expr, $previous:expr) => {
+        match $e {
+            EncodeResult::Wrote(n) => n,
+            EncodeResult::Finished => 0,
+            EncodeResult::WouldBlock(n) => return EncodeResult::WouldBlock(n + $previous),
+            e => return e
+        }
     }
 }
+
 
 #[derive(Debug, Clone)]
 pub struct FrameEncoder {
@@ -34,12 +44,10 @@ impl From<Frame> for FrameEncoder {
 }
 
 impl Encoder for FrameEncoder {
-    fn encode<W: io::Write>(&mut self, write: &mut W) -> Option<io::Result<usize>> {
-        try(self.header.encode(write), |n| {
-            try(self.payload.encode(write), |m| {
-                Some(Ok(n + m))
-            }, n)
-        }, 0)
+    fn encode<W: io::Write>(&mut self, write: &mut W) -> EncodeResult {
+        let n = try_encode!(self.header.encode(write), 0);
+        let m = try_encode!(self.payload.encode(write), n);
+        EncodeResult::Wrote(n + m)
     }
 }
 
@@ -65,7 +73,7 @@ enum PayloadEncoder {
     },
     WindowUpdate(U32Encoder),
     Continuation(SliceEncoder),
-    Unregistered
+    Unregistered(SliceEncoder)
 }
 
 impl From<Payload> for PayloadEncoder {
@@ -96,36 +104,38 @@ impl From<Payload> for PayloadEncoder {
             Payload::WindowUpdate(increment) =>
                 WindowUpdate(U32Encoder::from(increment.0)),
             Payload::Continuation(block) => Continuation(SliceEncoder::from(block)),
-            Payload::Unregistered => Unregistered
+            Payload::Unregistered(block) => Unregistered(SliceEncoder::from(block))
         }
     }
 }
 
 impl Encoder for PayloadEncoder {
-    fn encode<W: io::Write>(&mut self, write: &mut W) -> Option<io::Result<usize>> {
+    fn encode<W: io::Write>(&mut self, write: &mut W) -> EncodeResult {
         match *self {
             PayloadEncoder::Data(ref mut encoder) => encoder.encode(write),
-            PayloadEncoder::Headers { ref mut priority, ref mut block } =>
-                try(priority.encode(write), |n| {
-                    try(block.encode(write), |m| Some(Ok(n + m)), n)
-                }, 0),
+            PayloadEncoder::Headers { ref mut priority, ref mut block } => {
+                let n = try_encode!(priority.encode(write), 0);
+                let m = try_encode!(block.encode(write), n);
+                EncodeResult::Wrote(n + m)
+            },
             PayloadEncoder::Priority(ref mut priority) => priority.encode(write),
             PayloadEncoder::Reset(ref mut encoder) => encoder.encode(write),
             PayloadEncoder::Settings(ref mut settings) => settings.encode(write),
-            PayloadEncoder::PushPromise { ref mut promised, ref mut block } =>
-                try(promised.encode(write), |n| {
-                    try(block.encode(write), |m| Some(Ok(n + m)), n)
-                }, 0),
+            PayloadEncoder::PushPromise { ref mut promised, ref mut block } => {
+                let n = try_encode!(promised.encode(write), 0);
+                let m = try_encode!(block.encode(write), n);
+                EncodeResult::Wrote(n + m)
+            },
             PayloadEncoder::Ping(ref mut encoder) => encoder.encode(write),
-            PayloadEncoder::GoAway { ref mut last, ref mut error, ref mut data } =>
-                try(last.encode(write), |n| {
-                    try(error.encode(write), |m| {
-                        try(data.encode(write), |o| Some(Ok(n + m + o)), n + m)
-                    }, n)
-                }, 0),
+            PayloadEncoder::GoAway { ref mut last, ref mut error, ref mut data } => {
+                let n = try_encode!(last.encode(write), 0);
+                let m = try_encode!(error.encode(write), n);
+                let o = try_encode!(data.encode(write), n + m);
+                EncodeResult::Wrote(n + m + o)
+            },
             PayloadEncoder::WindowUpdate(ref mut encoder) => encoder.encode(write),
             PayloadEncoder::Continuation(ref mut encoder) => encoder.encode(write),
-            PayloadEncoder::Unregistered => None
+            PayloadEncoder::Unregistered(ref mut encoder) => encoder.encode(write)
         }
     }
 }
@@ -146,15 +156,18 @@ impl From<Slice> for SliceEncoder {
 }
 
 impl Encoder for SliceEncoder {
-    fn encode<W: io::Write>(&mut self, write: &mut W) -> Option<io::Result<usize>> {
-        if self.slice.len() <= self.position { return None }
+    fn encode<W: io::Write>(&mut self, write: &mut W) -> EncodeResult {
+        if self.slice.len() <= self.position { return EncodeResult::Finished }
 
         match write.write(&self.slice[self.position..]) {
+            Ok(0) => EncodeResult::Eof,
             Ok(n) => {
                 self.position += n;
-                Some(Ok(n))
+                EncodeResult::Wrote(n)
             },
-            e => Some(e)
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock =>
+                EncodeResult::WouldBlock(0),
+            Err(e) => EncodeResult::Error(e)
         }
     }
 }
@@ -228,17 +241,21 @@ macro_rules! small_buffer_encoder {
         }
 
         impl Encoder for $name {
-            fn encode<W: io::Write>(&mut self, write: &mut W) -> Option<io::Result<usize>> {
+            fn encode<W: io::Write>(&mut self, write: &mut W) -> EncodeResult {
                 if self.position >= $buffer_size {
-                    return None
+                    println!(concat!("Finished encoding ", stringify!($name)));
+                    return EncodeResult::Finished;
                 }
 
                 match write.write(&self.buffer[self.position as usize..]) {
+                    Ok(0) => EncodeResult::Eof,
                     Ok(n) => {
                         self.position += n as u8;
-                        Some(Ok(n))
+                        EncodeResult::Wrote(n)
                     },
-                    e => Some(e)
+                    Err(ref e) if e.kind() == io::ErrorKind::WouldBlock =>
+                        EncodeResult::WouldBlock(0),
+                    Err(e) => EncodeResult::Error(e)
                 }
             }
         }
@@ -249,4 +266,80 @@ small_buffer_encoder! { FrameHeaderEncoder, 9 }
 small_buffer_encoder! { PriorityEncoder, 5 }
 small_buffer_encoder! { U64Encoder, 8 }
 small_buffer_encoder! { U32Encoder, 4 }
+
+#[cfg(all(test, feature = "random"))]
+mod test {
+    use http::encoder::{FrameEncoder, Encoder, EncodeResult};
+    use http::parser::Frame;
+    use http2parse::Frame as RawFrame;
+    use appendbuf::{AppendBuf, Slice};
+
+    use std::io;
+
+    /// An io::Write instance which alternates accepting one byte
+    /// and returning WouldBlock, for testing.
+    struct Stutter {
+        // If false, will return WouldBlock next.
+        active: bool,
+        buffer: io::Cursor<Vec<u8>>
+    }
+
+    impl Stutter {
+        fn new(size: usize) -> Stutter {
+            Stutter {
+                active: true,
+                buffer: io::Cursor::new(vec![0; size])
+            }
+        }
+    }
+
+    impl io::Write for Stutter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            let active = self.active;
+            self.active = !active;
+
+            if active {
+                self.buffer.write(&buf[..1])
+            } else {
+                Err(io::Error::new(io::ErrorKind::WouldBlock, ""))
+            }
+        }
+
+        fn flush(&mut self) -> io::Result<()> { Ok(()) }
+    }
+
+    #[test]
+    fn test_frame_encoder() {
+        fn check(raw_frame: RawFrame) {
+            let mut encoder = FrameEncoder::from(Frame::clone_from(raw_frame));
+
+            let mut raw_encode_buf = vec![0; raw_frame.encoded_len()];
+            raw_frame.encode(&mut raw_encode_buf);
+
+            let mut stuttered = Stutter::new(raw_frame.encoded_len());
+            for i in 0..raw_frame.encoded_len() {
+                loop {
+                    match encoder.encode(&mut stuttered) {
+                        EncodeResult::WouldBlock(_) => break,
+                        EncodeResult::Wrote(1) => continue,
+                        EncodeResult::Wrote(0) => break,
+                        e => panic!("Bad encode result {:?}", e)
+                    }
+                }
+
+                // Make sure they encode the same.
+                let encoded = &stuttered.buffer.get_ref()[..i];
+                let raw = &raw_encode_buf[..i];
+                if encoded != raw {
+                    panic!("Assertion error encoding {:#?}, {:#?} != {:#?} at {:?} with encoder {:#?}",
+                           raw_frame, raw, encoded, i, encoder);
+                }
+            }
+        }
+
+        for _ in 0..1000 {
+            check(::rand::random())
+        }
+    }
+}
 

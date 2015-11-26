@@ -1,6 +1,5 @@
 #![feature(unboxed_closures, fnbox)]
 // #![cfg_attr(test, deny(warnings))]
-#![cfg_attr(test, feature(test))]
 #![allow(unused_variables)]
 // #![deny(missing_docs)]
 
@@ -15,6 +14,9 @@ extern crate byteorder;
 
 #[macro_use]
 extern crate log;
+
+#[cfg(all(test, feature = "random"))]
+extern crate rand;
 
 pub use eventual::{Future, Complete, Stream, Sender};
 

@@ -10,7 +10,7 @@ use rt::loophandler::{LoopHandler, InnerIoMachine, EventMachine};
 use rt::Metadata;
 
 use http::parser::{self, FrameHeader, Frame};
-use http::encoder::{FrameEncoder, Encoder};
+use http::encoder::{FrameEncoder, Encoder, EncodeResult};
 use http;
 
 use prelude::*;
@@ -164,24 +164,29 @@ impl InnerIoMachine<Connection> {
 
                 'encoder: loop {
                     match encoder.encode(&mut self.io.connection) {
-                        Some(Ok(n)) => {
+                        EncodeResult::Wrote(n) => {
                             debug!("Write {} bytes from frame.", n);
                             continue 'encoder;
                         },
-                        Some(Err(ref e)) if e.kind() == ErrorKind::WouldBlock => {
+                        EncodeResult::WouldBlock(_) => {
                             debug!("Write would block, yielding.");
                             self.io.outgoing = Some((encoder, cb));
                             return Some(self);
                         }
-                        Some(Err(e)) => {
+                        EncodeResult::Error(e) => {
                             error!("Connection write error {:?}", e);
                             handler.deregister(&self, event_loop);
                             return None;
                         },
-                        None => {
+                        EncodeResult::Finished => {
                             debug!("Finished writing frame encoder.");
                             cb.0.call_box(&mut self.io.http2);
                             break 'encoder;
+                        },
+                        EncodeResult::Eof => {
+                            debug!("Connection terminated.");
+                            handler.deregister(&self, event_loop);
+                            return None;
                         }
                     }
                 }
