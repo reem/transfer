@@ -18,8 +18,13 @@ use eventual::Async;
 #[derive(Debug, Default)]
 pub struct Http2 {
     streams: HashMap<StreamIdentifier, Option<Stream>>,
+    pub outgoing: Outgoing
+}
+
+#[derive(Debug, Default)]
+pub struct Outgoing {
     // TODO(reem): Replace with a priority/dependency tree.
-    outgoing: VecDeque<(Frame, WriteCallback)>
+    queue: VecDeque<(Frame, WriteCallback)>
 }
 
 impl Http2 {
@@ -41,17 +46,30 @@ impl Http2 {
         Ok(())
     }
 
-    pub fn get_next_encoder(&mut self) -> Option<(FrameEncoder, WriteCallback)> {
-        self.outgoing.pop_back().map(|(frame, cb)| (FrameEncoder::from(frame), cb))
-    }
-
-    pub fn queue_outgoing_frame<F>(&mut self, frame: Frame, cb: F)
-    where F: for<'a> FnBox<&'a mut Http2, Output=()> + Send + 'static {
-        self.outgoing.push_front((frame, WriteCallback(Box::new(cb))))
-    }
 }
 
-pub struct WriteCallback(pub Box<for<'a> FnBox<&'a mut Http2, Output=()> + Send>);
+impl Outgoing {
+    /// Queue a frame for writing.
+    ///
+    /// The callback will be called when the frame has been fully written
+    /// to the socket.
+    pub fn enqueue<F>(&mut self, frame: Frame, cb: F)
+    where F: for<'a> FnBox<(&'a mut Http2,), Output=()> + Send + 'static {
+        self.queue.push_front((frame, WriteCallback(Box::new(cb))))
+    }
+
+    /// Dequeue an encoder for writing to a socket.
+    ///
+    /// Note: ensure that the callback is called when the encoder is finished.
+    pub fn dequeue(&mut self) -> Option<(FrameEncoder, WriteCallback)> {
+        self.queue.pop_back().map(|(frame, cb)| (FrameEncoder::from(frame), cb))
+    }
+
+    /// Are there any frames remaining to be encoded?
+    pub fn is_empty(&self) -> bool { self.queue.is_empty() }
+}
+
+pub struct WriteCallback(pub Box<for<'a> FnBox<(&'a mut Http2,), Output=()> + Send>);
 
 impl fmt::Debug for WriteCallback {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

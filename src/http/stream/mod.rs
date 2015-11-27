@@ -37,6 +37,11 @@ impl Stream {
 
     pub fn apply(self, streams: &mut Http2, frame: Frame) -> Result<Self> {
         let header = frame.header;
+        streams.outgoing.enqueue(frame.clone(), move |_: &mut Http2| {
+            println!("Called back for writing frame {:#?}", header);
+        });
+
+        let header = frame.header;
         let payload = frame.payload;
 
         // FIXME: remove

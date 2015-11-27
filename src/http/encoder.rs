@@ -16,6 +16,16 @@ pub enum EncodeResult {
     Error(io::Error)
 }
 
+impl EncodeResult {
+    fn from_bytes(n: usize) -> EncodeResult {
+        if n == 0 {
+            EncodeResult::Finished
+        } else {
+            EncodeResult::Wrote(n)
+        }
+    }
+}
+
 macro_rules! try_encode {
     ($e:expr, $previous:expr) => {
         match $e {
@@ -47,7 +57,7 @@ impl Encoder for FrameEncoder {
     fn encode<W: io::Write>(&mut self, write: &mut W) -> EncodeResult {
         let n = try_encode!(self.header.encode(write), 0);
         let m = try_encode!(self.payload.encode(write), n);
-        EncodeResult::Wrote(n + m)
+        EncodeResult::from_bytes(n + m)
     }
 }
 
@@ -116,7 +126,7 @@ impl Encoder for PayloadEncoder {
             PayloadEncoder::Headers { ref mut priority, ref mut block } => {
                 let n = try_encode!(priority.encode(write), 0);
                 let m = try_encode!(block.encode(write), n);
-                EncodeResult::Wrote(n + m)
+                EncodeResult::from_bytes(n + m)
             },
             PayloadEncoder::Priority(ref mut priority) => priority.encode(write),
             PayloadEncoder::Reset(ref mut encoder) => encoder.encode(write),
@@ -124,14 +134,14 @@ impl Encoder for PayloadEncoder {
             PayloadEncoder::PushPromise { ref mut promised, ref mut block } => {
                 let n = try_encode!(promised.encode(write), 0);
                 let m = try_encode!(block.encode(write), n);
-                EncodeResult::Wrote(n + m)
+                EncodeResult::from_bytes(n + m)
             },
             PayloadEncoder::Ping(ref mut encoder) => encoder.encode(write),
             PayloadEncoder::GoAway { ref mut last, ref mut error, ref mut data } => {
                 let n = try_encode!(last.encode(write), 0);
                 let m = try_encode!(error.encode(write), n);
                 let o = try_encode!(data.encode(write), n + m);
-                EncodeResult::Wrote(n + m + o)
+                EncodeResult::from_bytes(n + m + o)
             },
             PayloadEncoder::WindowUpdate(ref mut encoder) => encoder.encode(write),
             PayloadEncoder::Continuation(ref mut encoder) => encoder.encode(write),
@@ -157,7 +167,7 @@ impl From<Slice> for SliceEncoder {
 
 impl Encoder for SliceEncoder {
     fn encode<W: io::Write>(&mut self, write: &mut W) -> EncodeResult {
-        if self.slice.len() <= self.position { return EncodeResult::Finished }
+        if self.slice.len() == self.position + 1 { return EncodeResult::Finished }
 
         match write.write(&self.slice[self.position..]) {
             Ok(0) => EncodeResult::Eof,
@@ -242,8 +252,7 @@ macro_rules! small_buffer_encoder {
 
         impl Encoder for $name {
             fn encode<W: io::Write>(&mut self, write: &mut W) -> EncodeResult {
-                if self.position >= $buffer_size {
-                    println!(concat!("Finished encoding ", stringify!($name)));
+                if self.position == $buffer_size {
                     return EncodeResult::Finished;
                 }
 
@@ -320,9 +329,12 @@ mod test {
             for i in 0..raw_frame.encoded_len() {
                 loop {
                     match encoder.encode(&mut stuttered) {
-                        EncodeResult::WouldBlock(_) => break,
+                        EncodeResult::WouldBlock(0) |
+                        EncodeResult::WouldBlock(1) |
+                        EncodeResult::Finished => break,
+
                         EncodeResult::Wrote(1) => continue,
-                        EncodeResult::Wrote(0) => break,
+
                         e => panic!("Bad encode result {:?}", e)
                     }
                 }

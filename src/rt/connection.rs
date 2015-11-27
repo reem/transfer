@@ -1,7 +1,6 @@
 use std::sync::Arc;
-use std::io::ErrorKind;
 
-use mio::{EventLoop, EventSet, TryRead};
+use mio::{EventLoop, EventSet, PollOpt, TryRead};
 use mio::tcp::TcpStream;
 
 use appendbuf::AppendBuf;
@@ -55,6 +54,16 @@ impl EventMachine for InnerIoMachine<Connection> {
         if events.contains(EventSet::writable()) {
             debug!("Writable event received on connection.");
             optself = optself.and_then(|this| this.writable(event_loop, handler))
+        }
+
+        if let Some(ref this) = optself {
+            if this.io.outgoing.is_some() || !this.io.http2.outgoing.is_empty() {
+                debug!("Reregistering connection.");
+                event_loop.reregister(&this.io, this.token,
+                                      EventSet::readable() | EventSet::writable(),
+                                      PollOpt::edge())
+                    .expect("Reregistering connection failed!");
+            }
         }
 
         optself
@@ -127,6 +136,8 @@ impl InnerIoMachine<Connection> {
 
     fn readable(mut self, event_loop: &mut EventLoop<LoopHandler>,
                 handler: &mut LoopHandler) -> Option<Self> {
+        debug!("Connection responding to readable event.");
+
         // Read in as much data as we can.
         loop {
             debug!("Reading from connection");
@@ -157,6 +168,8 @@ impl InnerIoMachine<Connection> {
 
     fn writable(mut self, event_loop: &mut EventLoop<LoopHandler>,
                 handler: &mut LoopHandler) -> Option<Self> {
+        debug!("Connection responding to writable event.");
+
         'writable: loop {
             if let Some((mut encoder, cb)) = self.io.outgoing.take() {
                 debug!("Popped frame encoder from outgoing.");
@@ -165,14 +178,14 @@ impl InnerIoMachine<Connection> {
                 'encoder: loop {
                     match encoder.encode(&mut self.io.connection) {
                         EncodeResult::Wrote(n) => {
-                            debug!("Write {} bytes from frame.", n);
+                            debug!("Wrote {} bytes from frame.", n);
                             continue 'encoder;
                         },
                         EncodeResult::WouldBlock(_) => {
                             debug!("Write would block, yielding.");
                             self.io.outgoing = Some((encoder, cb));
                             return Some(self);
-                        }
+                        },
                         EncodeResult::Error(e) => {
                             error!("Connection write error {:?}", e);
                             handler.deregister(&self, event_loop);
@@ -180,18 +193,19 @@ impl InnerIoMachine<Connection> {
                         },
                         EncodeResult::Finished => {
                             debug!("Finished writing frame encoder.");
-                            cb.0.call_box(&mut self.io.http2);
+                            cb.0.call_box((&mut self.io.http2,));
                             break 'encoder;
                         },
                         EncodeResult::Eof => {
-                            debug!("Connection terminated.");
+                            debug!("Received EOF on Connection, deregistering token {:?}.",
+                                   self.token);
                             handler.deregister(&self, event_loop);
                             return None;
                         }
                     }
                 }
             } else {
-                match self.io.http2.get_next_encoder() {
+                match self.io.http2.outgoing.dequeue() {
                     Some(e) => {
                         debug!("Pulling next encoder.");
                         self.io.outgoing = Some(e);
