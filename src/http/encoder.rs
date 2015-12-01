@@ -281,7 +281,6 @@ mod test {
     use http::encoder::{FrameEncoder, Encoder, EncodeResult};
     use http::parser::Frame;
     use http2parse::Frame as RawFrame;
-    use appendbuf::{AppendBuf, Slice};
 
     use std::io;
 

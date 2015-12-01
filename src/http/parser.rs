@@ -153,7 +153,6 @@ unsafe fn convert_slice<'a>(buf: &Slice, slice: &'a [u8]) -> Slice {
 
 #[cfg(test)]
 mod tests {
-    use prelude::*;
     use super::convert_slice;
 
     use appendbuf::{AppendBuf, Slice};

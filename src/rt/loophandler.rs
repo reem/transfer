@@ -13,7 +13,7 @@ use std::{io, mem, fmt};
 #[derive(Debug)]
 pub struct LoopHandler {
     pub metadata: Metadata,
-    pub slab: Slab<IoMachine>,
+    pub slab: Slab<LoopMachine>,
 }
 
 impl LoopHandler {
@@ -26,19 +26,37 @@ impl LoopHandler {
 
     pub fn register<E: Evented>(&mut self, io: E, event_loop: &mut EventLoop<Self>,
                                 interest: EventSet) -> Token
-    where InnerIoMachine<E>: Into<IoMachine>, E: fmt::Debug {
+    where IoMachine<E>: Into<LoopMachine>, E: fmt::Debug {
         self.slab.insert_with(move |token| {
-            let machine = InnerIoMachine { io: io, token: token };
+            let machine = IoMachine {
+                io: io,
+                token: token,
+                interest: interest,
+                pollopt: PollOpt::edge()
+            };
             debug!("Registering new machine {:?} for token {:?}", machine, token);
-            event_loop.register(&machine.io, token, interest, PollOpt::edge())
+            event_loop.register(&machine.io, machine.token,
+                                machine.interest, machine.pollopt)
                 .expect("Too many fds, cannot register more!");
             machine.into()
         }).unwrap()
     }
 
-    pub fn deregister<E: Evented>(&mut self, io: &InnerIoMachine<E>, event_loop: &mut EventLoop<Self>) {
-        if let Err(e) = event_loop.deregister(&io.io) {
-            error!("Error when deregistering io object: {:?}", e);
+    pub fn deregister<E: Evented>(&mut self, io: &mut IoMachine<E>,
+                                  event_loop: &mut EventLoop<Self>,
+                                  interest: EventSet)
+    where E: fmt::Debug {
+        io.interest = io.interest - interest;
+
+        if io.interest == EventSet::none() || io.interest == EventSet::hup() {
+            if let Err(e) = event_loop.deregister(&io.io) {
+                error!("Error when deregistering {:?} - {:?}", io, e);
+            }
+        } else {
+            if let Err(e) = event_loop.reregister(&io.io, io.token,
+                                                  io.interest, io.pollopt) {
+                error!("Error when reregistering {:?} - {:?}", io, e)
+            }
         }
     }
 }
@@ -52,38 +70,50 @@ pub trait EventMachine: Sized {
 }
 
 #[derive(Debug)]
-pub enum IoMachine {
-    Connection(InnerIoMachine<Connection>),
-    Acceptor(InnerIoMachine<Acceptor>),
-    Active // The active IoMachine appears in the slab as Active
+pub enum LoopMachine {
+    Connection(IoMachine<Connection>),
+    Acceptor(IoMachine<Acceptor>),
+    Active // The active LoopMachine appears in the slab as Active
 }
 
-impl EventMachine for IoMachine {
+impl EventMachine for LoopMachine {
     fn ready(self, event_loop: &mut EventLoop<LoopHandler>, handler: &mut LoopHandler,
              events: EventSet) -> Option<Self> {
+        fn filter_no_interest<E>(io: IoMachine<E>) -> Option<IoMachine<E>> {
+            if io.interest == EventSet::none() || io.interest == EventSet::hup() {
+                None
+            } else {
+                Some(io)
+            }
+        }
+
         match self {
-            IoMachine::Connection(machine) =>
-                machine.ready(event_loop, handler, events).map(Into::into),
-            IoMachine::Acceptor(machine) =>
-                machine.ready(event_loop, handler, events).map(Into::into),
-            IoMachine::Active =>
-                panic!("Recursive readiness! IoMachine::ready called on Active.")
+            LoopMachine::Connection(machine) =>
+                machine.ready(event_loop, handler, events)
+                    .and_then(filter_no_interest).map(Into::into),
+            LoopMachine::Acceptor(machine) =>
+                machine.ready(event_loop, handler, events)
+                    .and_then(filter_no_interest).map(Into::into),
+            LoopMachine::Active =>
+                panic!("Recursive readiness! LoopMachine::ready called on Active.")
         }
     }
 }
 
 #[derive(Debug)]
-pub struct InnerIoMachine<I> {
+pub struct IoMachine<I> {
     pub io: I,
-    pub token: Token
+    pub token: Token,
+    pub interest: EventSet,
+    pub pollopt: PollOpt
 }
 
-impl Into<IoMachine> for InnerIoMachine<Connection> {
-     fn into(self) -> IoMachine { IoMachine::Connection(self) }
+impl Into<LoopMachine> for IoMachine<Connection> {
+    fn into(self) -> LoopMachine { LoopMachine::Connection(self) }
 }
 
-impl Into<IoMachine> for InnerIoMachine<Acceptor> {
-     fn into(self) -> IoMachine { IoMachine::Acceptor(self) }
+impl Into<LoopMachine> for IoMachine<Acceptor> {
+    fn into(self) -> LoopMachine { LoopMachine::Acceptor(self) }
 }
 
 fn with_io<I, F, T>(io_obj: &I, cb: F) -> T
@@ -131,8 +161,8 @@ impl mio::Handler for LoopHandler {
     type Timeout = Thunk<'static>;
 
     fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token, events: EventSet) {
-        let old_machine = self.slab.replace(token, IoMachine::Active);
-        debug!("Ready event received ok token {:?}, machine: {:?}", token, old_machine);
+        let old_machine = self.slab.replace(token, LoopMachine::Active);
+        debug!("Event {:?} received on token {:?}, machine: {:?}", events, token, old_machine);
 
         let new_machine = old_machine
             .and_then(|machine| machine.ready(event_loop, self, events));
@@ -147,6 +177,9 @@ impl mio::Handler for LoopHandler {
                 self.slab.remove(token);
             }
         };
+
+        trace!("Finished processing event, slab: {:?}",
+               self.slab.iter().collect::<Vec<_>>());
     }
 
     fn notify(&mut self, event_loop: &mut EventLoop<LoopHandler>,

@@ -24,7 +24,8 @@ pub struct Http2 {
 #[derive(Debug, Default)]
 pub struct Outgoing {
     // TODO(reem): Replace with a priority/dependency tree.
-    queue: VecDeque<(Frame, WriteCallback)>
+    queue: VecDeque<(Frame, WriteCallback)>,
+    pub current: Option<(FrameEncoder, WriteCallback)>
 }
 
 impl Http2 {
@@ -66,7 +67,9 @@ impl Outgoing {
     }
 
     /// Are there any frames remaining to be encoded?
-    pub fn is_empty(&self) -> bool { self.queue.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.queue.is_empty() && self.current.is_none()
+    }
 }
 
 pub struct WriteCallback(pub Box<for<'a> FnBox<(&'a mut Http2,), Output=()> + Send>);

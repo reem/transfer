@@ -5,7 +5,7 @@ use mio::tcp::TcpStream;
 
 use appendbuf::AppendBuf;
 
-use rt::loophandler::{LoopHandler, InnerIoMachine, EventMachine};
+use rt::loophandler::{LoopHandler, IoMachine, EventMachine};
 use rt::Metadata;
 
 use http::parser::{self, FrameHeader, Frame};
@@ -24,7 +24,6 @@ pub struct Connection {
     http2: http::Http2,
     current: Option<FrameHeader>,
     buffer: AppendBuf,
-    outgoing: Option<(FrameEncoder, http::WriteCallback)>
 }
 
 impl Connection {
@@ -36,12 +35,11 @@ impl Connection {
             http2: http::Http2::new(),
             current: None,
             buffer: buf(),
-            outgoing: None
         }
     }
 }
 
-impl EventMachine for InnerIoMachine<Connection> {
+impl EventMachine for IoMachine<Connection> {
     fn ready(self, event_loop: &mut EventLoop<LoopHandler>, handler: &mut LoopHandler,
              events: EventSet) -> Option<Self> {
         let mut optself = Some(self);
@@ -56,21 +54,28 @@ impl EventMachine for InnerIoMachine<Connection> {
             optself = optself.and_then(|this| this.writable(event_loop, handler))
         }
 
-        if let Some(ref this) = optself {
-            if this.io.outgoing.is_some() || !this.io.http2.outgoing.is_empty() {
-                debug!("Reregistering connection.");
-                event_loop.reregister(&this.io, this.token,
-                                      EventSet::readable() | EventSet::writable(),
-                                      PollOpt::edge())
-                    .expect("Reregistering connection failed!");
-            }
+        if events.contains(EventSet::hup()) {
+            debug!("Hangup event received on connection.");
+            optself.take();
         }
 
-        optself
+        // If there have not been any fatal errors, and the connection can procede.
+        optself.map(|mut this| {
+            // and if the connection is not currently waiting for writable events
+            // and there is data to write, express interest in future writable
+            // events.
+            if !this.interest.contains(EventSet::writable()) &&
+               !this.io.http2.outgoing.is_empty() {
+                this.interest.insert(EventSet::writable());
+                handler.deregister(&mut this, event_loop, EventSet::none());
+            }
+
+            this
+        })
     }
 }
 
-impl InnerIoMachine<Connection> {
+impl IoMachine<Connection> {
     fn parse_frames(mut self) -> Option<Self> {
         // Parse as many frames as we can.
         loop {
@@ -145,9 +150,8 @@ impl InnerIoMachine<Connection> {
                 Ok(Some(0)) => {
                     debug!("Received EOF on Connection, deregistering token {:?}.",
                            self.token);
-                    handler.deregister(&self, event_loop);
-                    self.parse_frames();
-                    return None
+                    handler.deregister(&mut self, event_loop, EventSet::readable());
+                    return self.parse_frames();
                 },
                 Ok(Some(n)) => {
                     debug!("Read {} bytes into buffer.", n);
@@ -159,7 +163,7 @@ impl InnerIoMachine<Connection> {
                 },
                 Err(e) => {
                     error!("Connection read error {:?}", e);
-                    handler.deregister(&self, event_loop);
+                    handler.deregister(&mut self, event_loop, EventSet::readable());
                     return None
                 }
             }
@@ -171,7 +175,7 @@ impl InnerIoMachine<Connection> {
         debug!("Connection responding to writable event.");
 
         'writable: loop {
-            if let Some((mut encoder, cb)) = self.io.outgoing.take() {
+            if let Some((mut encoder, cb)) = self.io.http2.outgoing.current.take() {
                 debug!("Popped frame encoder from outgoing.");
                 trace!("FrameEncoder: {:?}", encoder);
 
@@ -183,12 +187,13 @@ impl InnerIoMachine<Connection> {
                         },
                         EncodeResult::WouldBlock(_) => {
                             debug!("Write would block, yielding.");
-                            self.io.outgoing = Some((encoder, cb));
+                            self.io.http2.outgoing.current = Some((encoder, cb));
                             return Some(self);
                         },
                         EncodeResult::Error(e) => {
                             error!("Connection write error {:?}", e);
-                            handler.deregister(&self, event_loop);
+                            handler.deregister(&mut self, event_loop,
+                                               EventSet::writable());
                             return None;
                         },
                         EncodeResult::Finished => {
@@ -199,8 +204,9 @@ impl InnerIoMachine<Connection> {
                         EncodeResult::Eof => {
                             debug!("Received EOF on Connection, deregistering token {:?}.",
                                    self.token);
-                            handler.deregister(&self, event_loop);
-                            return None;
+                            handler.deregister(&mut self, event_loop,
+                                               EventSet::writable());
+                            return Some(self)
                         }
                     }
                 }
@@ -208,10 +214,11 @@ impl InnerIoMachine<Connection> {
                 match self.io.http2.outgoing.dequeue() {
                     Some(e) => {
                         debug!("Pulling next encoder.");
-                        self.io.outgoing = Some(e);
+                        self.io.http2.outgoing.current = Some(e);
                     }
                     None => {
-                        debug!("No encoders available, yielding writable.");
+                        debug!("No encoders available, deregistering writable.");
+                        handler.deregister(&mut self, event_loop, EventSet::writable());
                         return Some(self)
                     }
                 }
