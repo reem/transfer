@@ -254,7 +254,7 @@ macro_rules! small_buffer_encoder {
 
         impl Encoder for $name {
             fn encode<W: io::Write>(&mut self, write: &mut W) -> EncodeResult {
-                if self.position == $buffer_size {
+                if $buffer_size == 0 || self.position == $buffer_size {
                     return EncodeResult::Finished;
                 }
 
@@ -278,38 +278,9 @@ small_buffer_encoder! { PriorityEncoder, 5 }
 small_buffer_encoder! { U64Encoder, 8 }
 small_buffer_encoder! { U32Encoder, 4 }
 
-#[test]
-fn test_slice_encoder() {
-    use ::appendbuf::AppendBuf;
-
-    let mut abuf = AppendBuf::new(10);
-    abuf.fill(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-
-    let mut result = vec![0; 10];
-    let mut one_byte_slice = SliceEncoder::from(abuf.slice().slice_to(1));
-    match one_byte_slice.encode(&mut &mut *result) {
-        EncodeResult::Wrote(1) => {},
-        e => panic!("Bad encode result {:?}, expected {:?}",
-                    e, EncodeResult::Wrote(1))
-    };
-    assert_eq!(&result[..1], &[1]);
-
-    let mut result = vec![0; 10];
-    let mut empty_slice = SliceEncoder::from(abuf.slice().slice_to(0));
-    match empty_slice.encode(&mut &mut *result) {
-        EncodeResult::Finished => {},
-        e => panic!("Bad encode result {:?}, expected {:?}",
-                    e, EncodeResult::Finished)
-    };
-    assert_eq!(&*result, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-}
-
-#[cfg(all(test, feature = "random"))]
+#[cfg(test)]
 mod test {
-    use http::encoder::{FrameEncoder, Encoder, EncodeResult};
-    use http::parser::Frame;
-    use http2parse::Frame as RawFrame;
-
+    use http::encoder::{SliceEncoder, Encoder, EncodeResult};
     use std::io;
 
     /// An io::Write instance which alternates accepting one byte
@@ -345,40 +316,128 @@ mod test {
     }
 
     #[test]
-    fn test_frame_encoder() {
-        fn check(raw_frame: RawFrame) {
-            let mut encoder = FrameEncoder::from(Frame::clone_from(raw_frame));
+    fn test_slice_encoder() {
+        use ::appendbuf::AppendBuf;
 
-            let mut raw_encode_buf = vec![0; raw_frame.encoded_len()];
-            raw_frame.encode(&mut raw_encode_buf);
+        let mut abuf = AppendBuf::new(10);
+        abuf.fill(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 
-            let mut stuttered = Stutter::new(raw_frame.encoded_len());
-            for i in 0..raw_frame.encoded_len() {
-                loop {
-                    match encoder.encode(&mut stuttered) {
-                        EncodeResult::WouldBlock(0) |
-                        EncodeResult::WouldBlock(1) |
-                        EncodeResult::Finished => break,
+        let mut result = vec![0; 10];
+        let mut one_byte_slice = SliceEncoder::from(abuf.slice().slice_to(1));
+        match one_byte_slice.encode(&mut &mut *result) {
+            EncodeResult::Wrote(1) => {},
+            e => panic!("Bad encode result {:?}, expected {:?}",
+                        e, EncodeResult::Wrote(1))
+        };
+        assert_eq!(&result[..1], &[1]);
 
-                        EncodeResult::Wrote(1) => continue,
+        result = vec![0; 10];
+        let mut empty_slice = SliceEncoder::from(abuf.slice().slice_to(0));
+        match empty_slice.encode(&mut &mut *result) {
+            EncodeResult::Finished => {},
+            e => panic!("Bad encode result {:?}, expected {:?}",
+                        e, EncodeResult::Finished)
+        };
+        assert_eq!(&*result, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 
-                        e => panic!("Bad encode result {:?}", e)
-                    }
-                }
+        result = vec![0; 10];
+        let mut full_slice = SliceEncoder::from(abuf.slice());
+        match full_slice.encode(&mut &mut *result) {
+            EncodeResult::Wrote(10) => {},
+            e => panic!("Bad encode result {:?}, expected {:?}",
+                        e, EncodeResult::Wrote(10))
+        };
+        assert_eq!(&*result, &*abuf);
+    }
 
-                // Make sure they encode the same.
-                let encoded = &stuttered.buffer.get_ref()[..i];
-                let raw = &raw_encode_buf[..i];
-                if encoded != raw {
-                    panic!("Assertion error encoding {:#?}, {:#?} != {:#?} at {:?} with encoder {:#?}",
-                           raw_frame, raw, encoded, i, encoder);
+    #[test]
+    fn test_small_buffer_encoder() {
+        small_buffer_encoder! { TestEncoder, 8 }
+
+        let data = [0, 1, 2, 3, 4, 5, 6, 7];
+
+        let mut encoder = TestEncoder {
+            buffer: data,
+            position: 0
+        };
+
+        let mut stuttered = Stutter::new(data.len());
+
+        for i in 0..8 {
+            loop {
+                match encoder.encode(&mut stuttered) {
+                    EncodeResult::WouldBlock(0) |
+                    EncodeResult::WouldBlock(1) |
+                    EncodeResult::Finished => break,
+
+                    EncodeResult::Wrote(1) => continue,
+
+                    e => panic!("Bad encode result {:?}", e)
                 }
             }
-        }
 
-        for _ in 0..1000 {
-            check(::rand::random())
+            assert_eq!(&data[..i], &stuttered.buffer.get_ref()[..i]);
         }
     }
+
+    #[test]
+    fn test_empty_small_buffer_encoder() {
+        small_buffer_encoder! { EmptyEncoder, 0 }
+
+        let mut empty_encoder = EmptyEncoder { buffer: [], position: 0 };
+        let mut empty_writer: &mut [u8] = &mut [];
+        match empty_encoder.encode(&mut empty_writer) {
+            EncodeResult::Finished => {},
+            e => panic!("Bad encode result {:?}, expected {:?}",
+                        e, EncodeResult::Finished)
+        }
+    }
+
+    #[cfg(feature = "random")]
+    mod rand {
+        use http::encoder::{FrameEncoder, Encoder, EncodeResult};
+        use http::parser::Frame;
+        use http2parse::Frame as RawFrame;
+
+        use super::Stutter;
+
+        #[test]
+        fn test_frame_encoder() {
+            fn check(raw_frame: RawFrame) {
+                let mut encoder = FrameEncoder::from(Frame::clone_from(raw_frame));
+
+                let mut raw_encode_buf = vec![0; raw_frame.encoded_len()];
+                raw_frame.encode(&mut raw_encode_buf);
+
+                let mut stuttered = Stutter::new(raw_frame.encoded_len());
+                for i in 0..raw_frame.encoded_len() {
+                    loop {
+                        match encoder.encode(&mut stuttered) {
+                            EncodeResult::WouldBlock(0) |
+                            EncodeResult::WouldBlock(1) |
+                            EncodeResult::Finished => break,
+
+                            EncodeResult::Wrote(1) => continue,
+
+                            e => panic!("Bad encode result {:?}", e)
+                        }
+                    }
+
+                    // Make sure they encode the same.
+                    let encoded = &stuttered.buffer.get_ref()[..i];
+                    let raw = &raw_encode_buf[..i];
+                    if encoded != raw {
+                        panic!("Assertion error encoding {:#?}, {:#?} != {:#?} at {:?} with encoder {:#?}",
+                               raw_frame, raw, encoded, i, encoder);
+                    }
+                }
+            }
+
+            for _ in 0..1000 {
+                check(::rand::random())
+            }
+        }
+    }
+
 }
 
