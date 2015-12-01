@@ -167,7 +167,9 @@ impl From<Slice> for SliceEncoder {
 
 impl Encoder for SliceEncoder {
     fn encode<W: io::Write>(&mut self, write: &mut W) -> EncodeResult {
-        if self.slice.len() == self.position + 1 { return EncodeResult::Finished }
+        if self.slice.len() == 0 || self.slice.len() == self.position {
+            return EncodeResult::Finished
+        }
 
         match write.write(&self.slice[self.position..]) {
             Ok(0) => EncodeResult::Eof,
@@ -275,6 +277,32 @@ small_buffer_encoder! { FrameHeaderEncoder, 9 }
 small_buffer_encoder! { PriorityEncoder, 5 }
 small_buffer_encoder! { U64Encoder, 8 }
 small_buffer_encoder! { U32Encoder, 4 }
+
+#[test]
+fn test_slice_encoder() {
+    use ::appendbuf::AppendBuf;
+
+    let mut abuf = AppendBuf::new(10);
+    abuf.fill(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+
+    let mut result = vec![0; 10];
+    let mut one_byte_slice = SliceEncoder::from(abuf.slice().slice_to(1));
+    match one_byte_slice.encode(&mut &mut *result) {
+        EncodeResult::Wrote(1) => {},
+        e => panic!("Bad encode result {:?}, expected {:?}",
+                    e, EncodeResult::Wrote(1))
+    };
+    assert_eq!(&result[..1], &[1]);
+
+    let mut result = vec![0; 10];
+    let mut empty_slice = SliceEncoder::from(abuf.slice().slice_to(0));
+    match empty_slice.encode(&mut &mut *result) {
+        EncodeResult::Finished => {},
+        e => panic!("Bad encode result {:?}, expected {:?}",
+                    e, EncodeResult::Finished)
+    };
+    assert_eq!(&*result, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+}
 
 #[cfg(all(test, feature = "random"))]
 mod test {
