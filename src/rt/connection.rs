@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use mio::{EventLoop, EventSet, PollOpt, TryRead};
+use mio::{EventLoop, EventSet, TryRead};
 use mio::tcp::TcpStream;
 
 use appendbuf::AppendBuf;
@@ -9,7 +9,7 @@ use rt::loophandler::{LoopHandler, IoMachine, EventMachine};
 use rt::Metadata;
 
 use http::parser::{self, FrameHeader, Frame};
-use http::encoder::{FrameEncoder, Encoder, EncodeResult};
+use http::encoder::{Encoder, EncodeResult};
 use http;
 
 use prelude::*;
