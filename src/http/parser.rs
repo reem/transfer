@@ -16,13 +16,20 @@ pub struct Frame {
     pub payload: Payload
 }
 
+impl<'a> PartialEq<::http2parse::Frame<'a>> for Frame {
+    fn eq(&self, other: &::http2parse::Frame) -> bool {
+        self.header == other.header &&
+            self.payload == other.payload
+    }
+}
+
 impl Frame {
     /// Convert a raw http2parse Frame into a transfer Frame by copying.
     ///
     /// The data within the frame is encoded then re-parsed into the new
     /// representation. This constructor is mostly for testing, and should
     /// not be used in performance-sensitive code.
-    pub fn clone_from(frame: ::http2parse::Frame) -> Frame {
+    pub fn clone_from(frame: &::http2parse::Frame) -> Frame {
         let mut buf = AppendBuf::new(frame.encoded_len());
 
         frame.encode(buf.get_write_buf());
@@ -81,6 +88,40 @@ pub enum Payload {
     WindowUpdate(SizeIncrement),
     Continuation(Slice),
     Unregistered(Slice)
+}
+
+impl<'a> PartialEq<::http2parse::Payload<'a>> for Payload {
+    fn eq(&self, other: &::http2parse::Payload) -> bool {
+        use http2parse::Payload as P2;
+        use self::Payload as P1;
+
+        // ugh
+        match (self, *other) {
+            (&P1::Data(ref buf), P2::Data { data }) => &**buf == data,
+            (&P1::Headers { priority: ref priority1, block: ref block1 },
+             P2::Headers { ref priority, block }) =>
+                priority1 == priority && &**block1 == block,
+            (&P1::Priority(ref priority), P2::Priority(ref priority1)) =>
+                priority == priority1,
+            (&P1::Reset(err), P2::Reset(err1)) => err == err1,
+            (&P1::Settings(ref settings), P2::Settings(settings1)) =>
+                &**settings == settings1,
+            (&P1::PushPromise { ref promised, ref block },
+             P2::PushPromise { promised: ref promised1, block: block1 }) =>
+                &**block == block1 && promised == promised1,
+            (&P1::Ping(data), P2::Ping(data1)) => data == data1,
+            (&P1::GoAway { ref last, error, ref data },
+             P2::GoAway { last: ref last1, error: error1, data: data1 }) =>
+                last == last && error == error1 && &**data == data1,
+            (&P1::WindowUpdate(increment), P2::WindowUpdate(increment1)) =>
+                increment == increment1,
+            (&P1::Continuation(ref block), P2::Continuation(block1)) =>
+                &**block == block1,
+            (&P1::Unregistered(ref block), P2::Unregistered(block1)) =>
+                &**block == block1,
+            _ => false
+        }
+    }
 }
 
 impl Payload {
@@ -169,6 +210,40 @@ mod tests {
         let slice = &buf[2..4];
         let converted = unsafe { convert_slice(&buf, slice) };
         assert_eq!(b"ll", &*converted);
+    }
+
+    #[cfg(feature = "random")]
+    mod rand {
+        use appendbuf::AppendBuf;
+        use http::parser::Frame;
+
+        #[test]
+        fn test_convert_frame() {
+            fn roundtrip(frame: ::http2parse::Frame) {
+                let new_frame = Frame::clone_from(&frame);
+                assert_eq!(new_frame, frame);
+            }
+
+            for _ in 0..100 {
+                roundtrip(::rand::random())
+            }
+        }
+
+        #[test]
+        fn test_frame_parse() {
+            fn roundtrip(frame: ::http2parse::Frame) {
+                let mut buf = AppendBuf::new(frame.encoded_len());
+                frame.encode(buf.get_write_buf());
+                unsafe { buf.advance(frame.encoded_len()) };
+                assert_eq!(Frame::parse(frame.header,
+                                        buf.slice().slice_from(9)).unwrap(),
+                           frame);
+            }
+
+            for _ in 0..100 {
+                roundtrip(::rand::random())
+            }
+        }
     }
 }
 

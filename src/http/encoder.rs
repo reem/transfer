@@ -404,7 +404,7 @@ mod test {
         #[test]
         fn test_frame_encoder() {
             fn check(raw_frame: RawFrame) {
-                let mut encoder = FrameEncoder::from(Frame::clone_from(raw_frame));
+                let mut encoder = FrameEncoder::from(Frame::clone_from(&raw_frame));
 
                 let mut raw_encode_buf = vec![0; raw_frame.encoded_len()];
                 raw_frame.encode(&mut raw_encode_buf);
